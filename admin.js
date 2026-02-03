@@ -5077,6 +5077,15 @@ function setupAdminEvents() {
         "ok"
       );
 
+      // Refrescar vista de usuarios para reflejar la nueva contraseña
+      try {
+        if (typeof renderUsers === "function") {
+          renderUsers();
+        }
+      } catch (e) {
+        console.warn("No se pudo refrescar la tabla de usuarios tras cambio de contraseña", e);
+      }
+
       showToast("Contraseña actualizada correctamente.");
     });
   }
@@ -6513,19 +6522,6 @@ function hydrateUserStationSelect() {
 function getCurrentAdminUserRecord() {
   if (!currentUser) return null;
 
-  const raw = window.localStorage.getItem(ADMIN_STORAGE_KEY);
-  let users = adminState.users;
-  try {
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed.users)) {
-        users = parsed.users;
-      }
-    }
-  } catch (e) {
-    console.warn("No se pudo leer usuarios de administración para perfil", e);
-  }
-
   const username =
     (currentUser && currentUser.username) ||
     window.localStorage.getItem(`${AUTH_KEY}-username`) ||
@@ -6533,11 +6529,11 @@ function getCurrentAdminUserRecord() {
 
   let user = null;
   if (username) {
-    user = users.find((u) => u.username === username) || null;
+    user = adminState.users.find((u) => u.username === username) || null;
   }
   if (!user) {
     user =
-      users.find(
+      adminState.users.find(
         (u) => u.name === currentUser.name && u.role === currentUser.role
       ) || null;
   }
