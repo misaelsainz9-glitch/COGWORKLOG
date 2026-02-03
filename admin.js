@@ -5300,6 +5300,61 @@ function setupAdminEvents() {
     });
   }
 
+  const resetUserPwdBtn = document.getElementById(
+    "btn-user-reset-password"
+  );
+  if (resetUserPwdBtn) {
+    resetUserPwdBtn.addEventListener("click", () => {
+      const selectedRow = document.querySelector(
+        "#users-table tbody tr.is-selected"
+      );
+      if (!selectedRow) {
+        showToast(
+          "Selecciona un usuario en la tabla para resetear su contraseña.",
+          "warning"
+        );
+        return;
+      }
+
+      const idStr = selectedRow.dataset.userId;
+      const id = idStr ? Number(idStr) : NaN;
+      if (!id || Number.isNaN(id)) {
+        showToast("No se pudo identificar al usuario seleccionado.", "error");
+        return;
+      }
+
+      const user = adminState.users.find((u) => u.id === id);
+      if (!user) {
+        showToast("No se encontró el usuario en el estado actual.", "error");
+        return;
+      }
+
+      const base = (user.username || user.name || "user").toLowerCase();
+      let simple = base.replace(/[^a-z0-9]/g, "");
+      if (!simple) simple = "user";
+      const suffix = ("" + (user.id || "")).slice(-3);
+      const newPassword = `${simple}_${suffix}`;
+
+      user.password = newPassword;
+      user.passwordLastChanged = new Date().toISOString();
+      saveAdminState();
+      renderUsers();
+
+      addGeneralLogEntry(
+        "Reset de contraseña",
+        `Se reseteó la contraseña del usuario ${user.username ||
+          user.name ||
+          ""}.`,
+        "ok"
+      );
+
+      showToast(
+        `Contraseña reseteada. Nueva contraseña: ${newPassword}`,
+        "success"
+      );
+    });
+  }
+
   window.addEventListener("keydown", (e) => {
     const target = e.target;
     const tag = target && target.tagName ? target.tagName.toLowerCase() : "";
