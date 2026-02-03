@@ -16,6 +16,7 @@ const STATUS = {
 };
 
 const IDLE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutos
+const TASKS_PAGE_SIZE = 50;
 
 let state = {
   employees: [],
@@ -30,6 +31,8 @@ let employeeCalendar = null;
 let currentActivityTaskId = null;
 let tasksTodayOnly = false;
 let idleTimeoutHandle = null;
+
+let tasksPage = 1;
 
 let currentReassignTaskId = null;
 let lastUpdatedTaskId = null;
@@ -820,6 +823,19 @@ function getInitials(name) {
     .map((n) => n[0])
     .join("")
     .toUpperCase();
+}
+
+// Utilidad simple para evitar recalcular listas pesadas en cada tecla
+function debounce(func, wait) {
+  let timeoutId;
+  return function () {
+    const context = this;
+    const args = arguments;
+    clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(function () {
+      func.apply(context, args);
+    }, wait);
+  };
 }
 
 function findEmployee(id) {
@@ -1973,7 +1989,15 @@ function renderTasksList() {
   const tbody = document.querySelector("#tasks-table tbody");
   tbody.innerHTML = "";
 
-  if (!filtered.length) {
+  const total = filtered.length;
+  const maxPage = total ? Math.ceil(total / TASKS_PAGE_SIZE) : 1;
+  if (tasksPage > maxPage) tasksPage = maxPage;
+  if (tasksPage < 1) tasksPage = 1;
+
+  const start = (tasksPage - 1) * TASKS_PAGE_SIZE;
+  const pageItems = filtered.slice(start, start + TASKS_PAGE_SIZE);
+
+  if (!pageItems.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
     td.colSpan = 8;
@@ -1984,13 +2008,20 @@ function renderTasksList() {
     tr.appendChild(td);
     tbody.appendChild(tr);
 
+    const infoEl = document.getElementById("tasks-pagination-info");
+    if (infoEl) infoEl.textContent = "0 tareas";
+    const prevBtn = document.getElementById("tasks-page-prev");
+    const nextBtn = document.getElementById("tasks-page-next");
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+
     if (employeeCalendar) {
       refreshEmployeeCalendarEvents();
     }
     return;
   }
 
-  filtered.forEach((t) => {
+  pageItems.forEach((t) => {
     const tr = document.createElement("tr");
     tr.dataset.taskId = String(t.id);
     const emp = findEmployee(t.employeeId);
@@ -2043,6 +2074,17 @@ function renderTasksList() {
     const actionsTd = document.createElement("td");
     if (canReassignTasks()) {
       const btn = document.createElement("button");
+
+  const from = start + 1;
+  const to = start + pageItems.length;
+  const infoEl = document.getElementById("tasks-pagination-info");
+  if (infoEl) {
+    infoEl.textContent = `Mostrando ${from}-${to} de ${total}`;
+  }
+  const prevBtn = document.getElementById("tasks-page-prev");
+  const nextBtn = document.getElementById("tasks-page-next");
+  if (prevBtn) prevBtn.disabled = tasksPage <= 1;
+  if (nextBtn) nextBtn.disabled = tasksPage >= maxPage;
       btn.type = "button";
       btn.className = "ghost-btn task-reassign-btn";
       btn.textContent = "Reasignar";
@@ -2441,21 +2483,26 @@ function setupEvents() {
     "filter-station",
     "filter-status",
   ].forEach((id) => {
-    document.getElementById(id).addEventListener("input", () => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const debouncedRenderTasksList = debounce(() => {
+      tasksPage = 1;
       renderTasksList();
-    });
-    document.getElementById(id).addEventListener("change", () => {
-      renderTasksList();
-    });
+    }, 180);
+    el.addEventListener("input", debouncedRenderTasksList);
+    el.addEventListener("change", debouncedRenderTasksList);
   });
 
   const btnTasksToday = document.getElementById("btn-tasks-today");
   const btnTasksExport = document.getElementById("btn-tasks-export");
+  const tasksPrevBtn = document.getElementById("tasks-page-prev");
+  const tasksNextBtn = document.getElementById("tasks-page-next");
 
   if (btnTasksToday) {
     btnTasksToday.addEventListener("click", () => {
       tasksTodayOnly = !tasksTodayOnly;
       btnTasksToday.classList.toggle("is-active", tasksTodayOnly);
+      tasksPage = 1;
       renderTasksList();
     });
   }
@@ -2463,6 +2510,22 @@ function setupEvents() {
   if (btnTasksExport) {
     btnTasksExport.addEventListener("click", () => {
       exportTasksCsv();
+    });
+  }
+
+  if (tasksPrevBtn) {
+    tasksPrevBtn.addEventListener("click", () => {
+      if (tasksPage > 1) {
+        tasksPage -= 1;
+        renderTasksList();
+      }
+    });
+  }
+
+  if (tasksNextBtn) {
+    tasksNextBtn.addEventListener("click", () => {
+      tasksPage += 1;
+      renderTasksList();
     });
   }
 

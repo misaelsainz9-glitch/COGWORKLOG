@@ -132,7 +132,7 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// Login validando contra users.json (usuario/contraseña/rol)
+// Login validando primero contra admin-data (usuarios administrados) y luego contra users.json
 app.post('/api/login', (req, res) => {
   const { username, password, role } = req.body || {};
 
@@ -140,17 +140,16 @@ app.post('/api/login', (req, res) => {
     return res.status(400).json({ ok: false, message: 'Usuario y contraseña son requeridos' });
   }
 
-  const users = loadUsers();
-  let matched = users.find((u) => u.username === username);
+  // 1) Preferir siempre el catálogo de administración (admin-data.json / BD),
+  //    que es el que se actualiza cuando cambias contraseñas desde el panel.
+  const state = loadAdminState();
+  const adminUsers = Array.isArray(state.users) ? state.users : [];
+  let matched = adminUsers.find((u) => u.username === username);
 
-  // Si no está en users.json, buscar también en admin-data.json (adminState.users)
+  // 2) Si no existe en admin-users, usar users.json como respaldo estático
   if (!matched) {
-    const state = loadAdminState();
-    const adminUsers = Array.isArray(state.users) ? state.users : [];
-    const fromAdmin = adminUsers.find((u) => u.username === username);
-    if (fromAdmin) {
-      matched = fromAdmin;
-    }
+    const users = loadUsers();
+    matched = users.find((u) => u.username === username);
   }
 
   if (!matched) {

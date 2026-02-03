@@ -1679,6 +1679,19 @@ function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Utilidad simple para evitar recalcular tablas muy pesadas en cada tecla
+function debounce(func, wait) {
+  let timeoutId;
+  return function () {
+    const context = this;
+    const args = arguments;
+    clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(function () {
+      func.apply(context, args);
+    }, wait);
+  };
+}
+
 function buildActivitiesData() {
   const rawOps = window.localStorage.getItem(OPERATIONS_STORAGE_KEY);
   if (!rawOps) return [];
@@ -4040,8 +4053,12 @@ function setupAdminEvents() {
   }
 
   const searchLog = document.getElementById("log-search");
+  const debouncedRenderLogs = debounce(renderLogs, 180);
+  const debouncedRenderAlerts = debounce(renderAlerts, 180);
+  const debouncedRenderGeneralLogs = debounce(renderGeneralLogs, 180);
+  const debouncedRenderStations = debounce(renderStations, 180);
   if (searchLog) {
-    searchLog.addEventListener("input", renderLogs);
+    searchLog.addEventListener("input", debouncedRenderLogs);
   }
 
   const alertsSearch = document.getElementById("alerts-search");
@@ -4061,7 +4078,7 @@ function setupAdminEvents() {
   ].forEach((el) => {
     if (!el) return;
     const evt = el.tagName === "SELECT" || el.type === "checkbox" ? "change" : "input";
-    el.addEventListener(evt, renderAlerts);
+    el.addEventListener(evt, debouncedRenderAlerts);
   });
 
   const filterStation = document.getElementById("log-filter-station");
@@ -4099,12 +4116,12 @@ function setupAdminEvents() {
   ].forEach((el) => {
     if (!el) return;
     const evt = el.tagName === "SELECT" ? "change" : "input";
-    el.addEventListener(evt, renderLogs);
+    el.addEventListener(evt, debouncedRenderLogs);
   });
 
   const searchGeneral = document.getElementById("general-search");
   if (searchGeneral) {
-    searchGeneral.addEventListener("input", renderGeneralLogs);
+    searchGeneral.addEventListener("input", debouncedRenderGeneralLogs);
   }
 
   const savedViewsSelect = document.getElementById("log-saved-view");
@@ -4241,7 +4258,7 @@ function setupAdminEvents() {
 
   const searchStation = document.getElementById("station-search");
   if (searchStation) {
-    searchStation.addEventListener("input", renderStations);
+    searchStation.addEventListener("input", debouncedRenderStations);
   }
 
   const globalSearchInput = document.getElementById("global-search-input");
