@@ -10,8 +10,9 @@ app.use(cors());
 app.use(express.json());
 
 // Servir archivos estáticos del frontend (login.html, admin.html, index.html, etc.)
+// Hacemos que la ruta raíz "/" cargue login.html por defecto.
 const clientDir = path.join(__dirname, "..");
-app.use(express.static(clientDir));
+app.use(express.static(clientDir, { index: 'login.html' }));
 
 // Carga de usuarios desde archivo JSON sencillo
 function loadUsers() {
