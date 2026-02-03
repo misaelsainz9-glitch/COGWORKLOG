@@ -3897,6 +3897,86 @@ function exportLogsCsv() {
   URL.revokeObjectURL(url);
 }
 
+function exportGeneralLogsCsv() {
+  const logs = Array.isArray(adminState.generalLogs)
+    ? adminState.generalLogs.slice()
+    : [];
+
+  if (!logs.length) {
+    showToast(
+      "No hay registros en la bitácora general para exportar.",
+      "warning"
+    );
+    return;
+  }
+
+  const searchEl = document.getElementById("general-search");
+  const search = searchEl
+    ? searchEl.value.trim().toLowerCase()
+    : "";
+
+  const filtered = logs.filter((log) => {
+    const rowText = `${log.user} ${log.activity} ${log.description}`.toLowerCase();
+    if (search && !rowText.includes(search)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    showToast(
+      "No hay registros en la bitácora general con el filtro actual.",
+      "warning"
+    );
+    return;
+  }
+
+  const header = [
+    "ID",
+    "Usuario",
+    "Rol",
+    "Actividad",
+    "Descripcion",
+    "Fecha",
+    "Hora",
+    "Estado",
+  ];
+
+  const rows = filtered.map((log) => [
+    log.id || "",
+    log.user || "",
+    log.role || "",
+    log.activity || "",
+    log.description || "",
+    log.date || "",
+    log.time || "",
+    log.status || "",
+  ]);
+
+  const csvLines = [
+    header.join(","),
+    ...rows.map((r) =>
+      r
+        .map((value) => {
+          const v = value == null ? "" : String(value);
+          const escaped = v.replace(/"/g, '""');
+          return `"${escaped}"`;
+        })
+        .join(",")
+    ),
+  ];
+
+  const blob = new Blob([csvLines.join("\n")], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "cog-work-log-bitacora-general.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function exportFuelLogsCsv() {
   const logs = getFilteredLogsForExport();
   const fuelLogs = logs.filter((log) => {
@@ -4749,6 +4829,17 @@ function setupAdminEvents() {
         exportFuelLogsCsv();
       });
     }
+  }
+
+  const exportGeneralBtn = document.getElementById("btn-export-general-csv");
+  if (exportGeneralBtn) {
+    exportGeneralBtn.addEventListener("click", () => {
+      if (!can("exportLogs")) {
+        showToast("No tienes permisos para exportar bitácora.", "error");
+        return;
+      }
+      exportGeneralLogsCsv();
+    });
   }
 
   const logPrev = document.getElementById("log-page-prev");
