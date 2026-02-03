@@ -2,7 +2,8 @@ const ADMIN_STORAGE_KEY = "cog-work-log-admin";
 const THEME_STORAGE_KEY = "cog-work-log-theme";
 
 // Configuración opcional de backend
-const BACKEND_URL = "http://localhost:3001";
+// Usamos misma origen (Render o servidor local que sirve los estáticos y la API)
+const BACKEND_URL = "";
 const BACKEND_LOGIN_ENABLED = true;
 
 const LOGIN_ATTEMPTS_KEY = "cog-work-log-login-attempts";

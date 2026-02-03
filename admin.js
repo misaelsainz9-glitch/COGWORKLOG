@@ -1,7 +1,8 @@
 const ADMIN_STORAGE_KEY = "cog-work-log-admin";
 const THEME_STORAGE_KEY = "cog-work-log-theme";
 // Configuración opcional de backend para administración
-const BACKEND_URL = "http://localhost:3001";
+// Usamos misma origen (Render o servidor local que sirve los estáticos y la API)
+const BACKEND_URL = "";
 const BACKEND_ADMIN_ENABLED = true;
 // Versión de esquema de datos de administración para poder regenerar seeds cuando cambian
 const ADMIN_DATA_VERSION = 7;

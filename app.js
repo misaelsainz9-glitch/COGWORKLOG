@@ -2,7 +2,8 @@ const STORAGE_KEY = "cog-work-log-data";
 const THEME_STORAGE_KEY = "cog-work-log-theme";
 const ADMIN_STORAGE_KEY = "cog-work-log-admin";
 // Configuración opcional de backend para datos operativos
-const BACKEND_URL = "http://localhost:3001";
+// Usamos misma origen (Render o servidor local que sirve los estáticos y la API)
+const BACKEND_URL = "";
 const BACKEND_OPERATIONS_ENABLED = true;
 // Versión del esquema de datos de demo para poder regenerar seeds cuando cambian
 // Incrementar este valor cuando se agreguen/ajusten empleados o tareas semilla
