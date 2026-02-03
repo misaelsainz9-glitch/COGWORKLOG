@@ -5,7 +5,8 @@ const THEME_STORAGE_KEY = "cog-work-log-theme";
 const BACKEND_URL = "";
 const BACKEND_ADMIN_ENABLED = true;
 // Versión de esquema de datos de administración para poder regenerar seeds cuando cambian
-const ADMIN_DATA_VERSION = 7;
+// Incrementa este valor cuando cambies usuarios/estructura semilla
+const ADMIN_DATA_VERSION = 8;
 const LOG_FILTERS_KEY = "cog-work-log-admin-log-filters";
 const REPORT_FILTERS_KEY = "cog-work-log-admin-report-filters";
 const LOG_SAVED_VIEWS_KEY = "cog-work-log-admin-log-saved-views";
@@ -1269,246 +1270,18 @@ function seedAdminState() {
     },
   ];
 
+  // Usuarios semilla: solo un administrador base.
+  // A partir de este usuario podrás crear el resto desde la vista "Usuarios" del panel admin.
   adminState.users = [
-    // Administrador general del sistema
     {
       id: 1,
-      name: "Administrador1",
-      username: "admin1",
+      name: "Administrador",
+      username: "admin",
       password: "admin123",
       role: "admin",
       stationId: "",
       area: "Corporativo",
       passwordLastChanged: todayIso,
-    },
-
-    // Encargados de estación (jefes de estación)
-    {
-      id: 2,
-      name: "Encargado Las Torres",
-      username: "enc_torres",
-      password: "torres123",
-      role: "jefe_estacion",
-      stationId: "st1",
-      area: "Operación",
-      passwordLastChanged: todayIso,
-    },
-    {
-      id: 3,
-      name: "Encargado Cumbres",
-      username: "enc_cumbres",
-      password: "cumbres123",
-      role: "jefe_estacion",
-      stationId: "st2",
-      area: "Operación",
-      passwordLastChanged: todayIso,
-    },
-    {
-      id: 4,
-      name: "Encargado Centro",
-      username: "enc_centro",
-      password: "centro123",
-      role: "jefe_estacion",
-      stationId: "st3",
-      area: "Operación",
-      passwordLastChanged: todayIso,
-    },
-    {
-      id: 5,
-      name: "Encargado Aeropuerto",
-      username: "enc_aeropuerto",
-      password: "aeropuerto123",
-      role: "jefe_estacion",
-      stationId: "st4",
-      area: "Operación",
-      passwordLastChanged: todayIso,
-    },
-    {
-      id: 6,
-      name: "Encargado Valle",
-      username: "enc_valle",
-      password: "valle123",
-      role: "jefe_estacion",
-      stationId: "st5",
-      area: "Operación",
-      passwordLastChanged: todayIso,
-    },
-
-    // Supervisor regional (ve varias estaciones)
-    {
-      id: 7,
-      name: "Supervisor Regional",
-      username: "sup_regional",
-      password: "super123",
-      role: "supervisor",
-      stationId: "",
-      area: "Operación",
-      passwordLastChanged: todayIso,
-    },
-
-    // Operadores Gasolinera Las Torres
-    {
-      id: 8,
-      name: "Operador Torres 1",
-      username: "op_torres1",
-      password: "op123",
-      role: "empleado",
-      stationId: "st1",
-      area: "Operación",
-    },
-    {
-      id: 9,
-      name: "Operador Torres 2",
-      username: "op_torres2",
-      password: "op123",
-      role: "empleado",
-      stationId: "st1",
-      area: "Operación",
-    },
-    {
-      id: 10,
-      name: "Operador Torres 3",
-      username: "op_torres3",
-      password: "op123",
-      role: "empleado",
-      stationId: "st1",
-      area: "Operación",
-    },
-
-    // Operadores Gasolinera Cumbres
-    {
-      id: 11,
-      name: "Operador Cumbres 1",
-      username: "op_cumbres1",
-      password: "op123",
-      role: "empleado",
-      stationId: "st2",
-      area: "Operación",
-    },
-    {
-      id: 12,
-      name: "Operador Cumbres 2",
-      username: "op_cumbres2",
-      password: "op123",
-      role: "empleado",
-      stationId: "st2",
-      area: "Operación",
-    },
-    {
-      id: 13,
-      name: "Operador Cumbres 3",
-      username: "op_cumbres3",
-      password: "op123",
-      role: "empleado",
-      stationId: "st2",
-      area: "Operación",
-    },
-
-    // Operadores Gasolinera Centro
-    {
-      id: 14,
-      name: "Operador Centro 1",
-      username: "op_centro1",
-      password: "op123",
-      role: "empleado",
-      stationId: "st3",
-      area: "Operación",
-    },
-    {
-      id: 15,
-      name: "Operador Centro 2",
-      username: "op_centro2",
-      password: "op123",
-      role: "empleado",
-      stationId: "st3",
-      area: "Operación",
-    },
-    {
-      id: 16,
-      name: "Operador Centro 3",
-      username: "op_centro3",
-      password: "op123",
-      role: "empleado",
-      stationId: "st3",
-      area: "Operación",
-    },
-
-    // Operadores Gasolinera Aeropuerto
-    {
-      id: 17,
-      name: "Operador Aeropuerto 1",
-      username: "op_aeropuerto1",
-      password: "op123",
-      role: "empleado",
-      stationId: "st4",
-      area: "Operación",
-    },
-    {
-      id: 18,
-      name: "Operador Aeropuerto 2",
-      username: "op_aeropuerto2",
-      password: "op123",
-      role: "empleado",
-      stationId: "st4",
-      area: "Operación",
-    },
-    {
-      id: 19,
-      name: "Operador Aeropuerto 3",
-      username: "op_aeropuerto3",
-      password: "op123",
-      role: "empleado",
-      stationId: "st4",
-      area: "Operación",
-    },
-
-    // Operadores Gasolinera Valle Oriente
-    {
-      id: 20,
-      name: "Operador Valle 1",
-      username: "op_valle1",
-      password: "op123",
-      role: "empleado",
-      stationId: "st5",
-      area: "Operación",
-    },
-    {
-      id: 21,
-      name: "Operador Valle 2",
-      username: "op_valle2",
-      password: "op123",
-      role: "empleado",
-      stationId: "st5",
-      area: "Operación",
-    },
-    {
-      id: 22,
-      name: "Operador Valle 3",
-      username: "op_valle3",
-      password: "op123",
-      role: "empleado",
-      stationId: "st5",
-      area: "Operación",
-    },
-
-    // Auditores (comparten actividades entre estaciones)
-    {
-      id: 23,
-      name: "Auditor Operativo",
-      username: "aud_operativo",
-      password: "auditor123",
-      role: "auditor",
-      stationId: "",
-      area: "Seguridad",
-    },
-    {
-      id: 24,
-      name: "Auditor Seguridad",
-      username: "aud_seguridad",
-      password: "auditor123",
-      role: "auditor",
-      stationId: "",
-      area: "Seguridad",
     },
   ];
 
