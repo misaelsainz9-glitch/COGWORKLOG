@@ -24,6 +24,9 @@
             <span id="topbar-incidents" class="admin-topbar-chip admin-topbar-chip-warning">Incidencias: 0</span>
             <span id="topbar-overdue" class="admin-topbar-chip admin-topbar-chip-danger">Vencidos: 0</span>
           </div>
+          <button id="admin-sync-btn" type="button" class="admin-topbar-theme-toggle" aria-label="Sincronizar datos">
+            &#10227;
+          </button>
           <button id="theme-toggle" type="button" class="admin-topbar-theme-toggle" aria-label="Cambiar tema">
             &#9728;
           </button>
@@ -551,6 +554,11 @@
                   <tbody></tbody>
                 </table>
               </div>
+              <div class="admin-pagination" id="alerts-pagination">
+                <button type="button" id="alerts-page-prev" class="ghost-btn">Anterior</button>
+                <span id="alerts-pagination-info" class="admin-pagination-info">0 alertas</span>
+                <button type="button" id="alerts-page-next" class="ghost-btn">Siguiente</button>
+              </div>
             </div>
 
             <div id="admin-view-general" class="admin-view">
@@ -575,6 +583,11 @@
                   </thead>
                   <tbody></tbody>
                 </table>
+              </div>
+              <div class="admin-pagination" id="general-pagination">
+                <button type="button" id="general-page-prev" class="ghost-btn">Anterior</button>
+                <span id="general-pagination-info" class="admin-pagination-info">0 registros</span>
+                <button type="button" id="general-page-next" class="ghost-btn">Siguiente</button>
               </div>
             </div>
 

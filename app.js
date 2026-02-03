@@ -3136,7 +3136,30 @@ window.addEventListener("DOMContentLoaded", () => {
   renderDashboard();
   setView("view-dashboard");
   initEmployeeCalendar();
-   applyRoleRestrictions();
+  applyRoleRestrictions();
+
+  const opsSyncBtn = document.getElementById("operations-sync-btn");
+  if (opsSyncBtn) {
+    opsSyncBtn.addEventListener("click", async () => {
+      opsSyncBtn.disabled = true;
+      try {
+        await syncOperationsStateFromBackendIfAvailable();
+        loadState();
+        renderDashboard();
+        renderTasksList();
+        renderEmployeeDetail();
+        if (employeeCalendar) {
+          refreshEmployeeCalendarEvents();
+        }
+        showToast("Datos sincronizados desde el servidor", "success");
+      } catch (e) {
+        console.error("Error al sincronizar operations-state manualmente", e);
+        showToast("No se pudo sincronizar datos desde el servidor", "error");
+      } finally {
+        opsSyncBtn.disabled = false;
+      }
+    });
+  }
   })();
 });
 

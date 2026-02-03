@@ -143,6 +143,12 @@ const LOG_PAGE_SIZE = 15;
 let usersPage = 1;
 const USERS_PAGE_SIZE = 10;
 
+let alertsPage = 1;
+const ALERTS_PAGE_SIZE = 20;
+
+let generalPage = 1;
+const GENERAL_PAGE_SIZE = 20;
+
 const ROLE_PERMISSIONS = {
   admin: {
     createLog: true,
@@ -2872,10 +2878,19 @@ function renderAlerts() {
     td.textContent = "Sin alertas o incidentes con los filtros actuales.";
     tr.appendChild(td);
     tbody.appendChild(tr);
+
+    const infoEl = document.getElementById("alerts-pagination-info");
+    if (infoEl) {
+      infoEl.textContent = "0 alertas";
+    }
+    const prevBtn = document.getElementById("alerts-page-prev");
+    const nextBtn = document.getElementById("alerts-page-next");
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
     return;
   }
 
-  rows
+  const sorted = rows
     .slice()
     .sort((a, b) => {
       const ad = a.log.date || "";
@@ -2885,8 +2900,20 @@ function renderAlerts() {
       const k1 = ad + at;
       const k2 = bd + bt;
       return k2.localeCompare(k1); // más recientes primero
-    })
-    .forEach(({ log, station }) => {
+    });
+
+  const total = sorted.length;
+  const maxPage = total ? Math.ceil(total / ALERTS_PAGE_SIZE) : 1;
+  if (alertsPage > maxPage) alertsPage = maxPage;
+  if (alertsPage < 1) alertsPage = 1;
+
+  const start = (alertsPage - 1) * ALERTS_PAGE_SIZE;
+  const pageItems = sorted.slice(start, start + ALERTS_PAGE_SIZE);
+
+  const from = start + 1;
+  const to = start + pageItems.length;
+
+  pageItems.forEach(({ log, station }) => {
       const tr = document.createElement("tr");
 
       // Estilos visuales según severidad del incidente
@@ -3001,6 +3028,15 @@ function renderAlerts() {
 
       tbody.appendChild(tr);
     });
+
+  const infoEl = document.getElementById("alerts-pagination-info");
+  if (infoEl) {
+    infoEl.textContent = `Mostrando ${from}-${to} de ${total}`;
+  }
+  const prevBtn = document.getElementById("alerts-page-prev");
+  const nextBtn = document.getElementById("alerts-page-next");
+  if (prevBtn) prevBtn.disabled = alertsPage <= 1;
+  if (nextBtn) nextBtn.disabled = alertsPage >= maxPage;
 }
 
 function openLogComments(logId) {
@@ -3057,10 +3093,46 @@ function renderGeneralLogs() {
     .value.trim()
     .toLowerCase();
 
+  const filtered = [];
+
   adminState.generalLogs.forEach((log) => {
     const rowText = `${log.user} ${log.activity} ${log.description}`.toLowerCase();
     if (search && !rowText.includes(search)) return;
+    filtered.push(log);
+  });
 
+  if (!filtered.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 9;
+    td.className = "admin-empty-row";
+    td.textContent = "Sin registros en la bitácora general con los filtros actuales.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+
+    const infoEl = document.getElementById("general-pagination-info");
+    if (infoEl) {
+      infoEl.textContent = "0 registros";
+    }
+    const prevBtn = document.getElementById("general-page-prev");
+    const nextBtn = document.getElementById("general-page-next");
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+    return;
+  }
+
+  const total = filtered.length;
+  const maxPage = total ? Math.ceil(total / GENERAL_PAGE_SIZE) : 1;
+  if (generalPage > maxPage) generalPage = maxPage;
+  if (generalPage < 1) generalPage = 1;
+
+  const start = (generalPage - 1) * GENERAL_PAGE_SIZE;
+  const pageItems = filtered.slice(start, start + GENERAL_PAGE_SIZE);
+
+  const from = start + 1;
+  const to = start + pageItems.length;
+
+  pageItems.forEach((log) => {
     const tr = document.createElement("tr");
 
     const idTd = document.createElement("td");
@@ -3073,6 +3145,7 @@ function renderGeneralLogs() {
       const searchEl = document.getElementById("general-search");
       if (searchEl && log.user) {
         searchEl.value = log.user;
+        generalPage = 1;
         renderGeneralLogs();
       }
     });
@@ -3099,6 +3172,15 @@ function renderGeneralLogs() {
 
     tbody.appendChild(tr);
   });
+
+  const infoEl = document.getElementById("general-pagination-info");
+  if (infoEl) {
+    infoEl.textContent = `Mostrando ${from}-${to} de ${total}`;
+  }
+  const prevBtn = document.getElementById("general-page-prev");
+  const nextBtn = document.getElementById("general-page-next");
+  if (prevBtn) prevBtn.disabled = generalPage <= 1;
+  if (nextBtn) nextBtn.disabled = generalPage >= maxPage;
 }
 
 function renderStations() {
@@ -4054,8 +4136,14 @@ function setupAdminEvents() {
 
   const searchLog = document.getElementById("log-search");
   const debouncedRenderLogs = debounce(renderLogs, 180);
-  const debouncedRenderAlerts = debounce(renderAlerts, 180);
-  const debouncedRenderGeneralLogs = debounce(renderGeneralLogs, 180);
+  const debouncedRenderAlerts = debounce(() => {
+    alertsPage = 1;
+    renderAlerts();
+  }, 180);
+  const debouncedRenderGeneralLogs = debounce(() => {
+    generalPage = 1;
+    renderGeneralLogs();
+  }, 180);
   const debouncedRenderStations = debounce(renderStations, 180);
   if (searchLog) {
     searchLog.addEventListener("input", debouncedRenderLogs);
@@ -4677,6 +4765,69 @@ function setupAdminEvents() {
     logNext.addEventListener("click", () => {
       logPage += 1;
       renderLogs();
+    });
+  }
+
+  const adminSyncBtn = document.getElementById("admin-sync-btn");
+  if (adminSyncBtn) {
+    adminSyncBtn.addEventListener("click", async () => {
+      adminSyncBtn.disabled = true;
+      try {
+        await syncAdminStateFromBackendIfAvailable();
+        loadAdminState();
+        resolveAssignedStationId();
+        hydrateLogStationSelect();
+        hydrateLogFilterStationSelect();
+        hydrateUserStationSelect();
+        hydrateDashboardStationSelect();
+        renderDashboard();
+        renderLogs();
+        renderAlerts();
+        renderGeneralLogs();
+        renderStations();
+        renderShifts();
+        renderUsers();
+        showToast("Datos sincronizados desde el servidor", "success");
+      } catch (e) {
+        console.error("Error al sincronizar admin-state manualmente", e);
+        showToast("No se pudo sincronizar datos desde el servidor", "error");
+      } finally {
+        adminSyncBtn.disabled = false;
+      }
+    });
+  }
+
+  const alertsPrev = document.getElementById("alerts-page-prev");
+  const alertsNext = document.getElementById("alerts-page-next");
+  if (alertsPrev) {
+    alertsPrev.addEventListener("click", () => {
+      if (alertsPage > 1) {
+        alertsPage -= 1;
+        renderAlerts();
+      }
+    });
+  }
+  if (alertsNext) {
+    alertsNext.addEventListener("click", () => {
+      alertsPage += 1;
+      renderAlerts();
+    });
+  }
+
+  const generalPrev = document.getElementById("general-page-prev");
+  const generalNext = document.getElementById("general-page-next");
+  if (generalPrev) {
+    generalPrev.addEventListener("click", () => {
+      if (generalPage > 1) {
+        generalPage -= 1;
+        renderGeneralLogs();
+      }
+    });
+  }
+  if (generalNext) {
+    generalNext.addEventListener("click", () => {
+      generalPage += 1;
+      renderGeneralLogs();
     });
   }
 
