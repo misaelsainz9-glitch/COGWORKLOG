@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>COG WORK LOG</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+  </head>
+  <body>
+    <div id="app-shell" class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <span class="logo-text">COG WORK LOG</span>
+        </div>
+        <nav class="sidebar-nav">
+          <button class="nav-item is-active" data-view="dashboard">Inicio</button>
+          <button class="nav-item" data-view="myday">Mi día</button>
+          <button class="nav-item" data-view="team">Mi equipo</button>
+          <button class="nav-item" data-view="tasks">Lista de tareas</button>
+          <button class="nav-item" data-view="profile">Mi perfil</button>
+        </nav>
+        <button class="logout-btn" type="button">Cerrar sesión</button>
+      </aside>
+
+      <main class="main">
+        <div class="content-shell">
+          <header class="topbar">
+            <div class="topbar-title">COG WORK LOG</div>
+            <div class="topbar-metrics">
+              <span id="topbar-my-pending" class="topbar-chip topbar-chip-warning">Pendientes: 0</span>
+              <span id="topbar-my-overdue" class="topbar-chip topbar-chip-danger">Atrasadas: 0</span>
+            </div>
+            <button
+              id="theme-toggle-main"
+              type="button"
+              class="admin-topbar-theme-toggle"
+              aria-label="Cambiar tema"
+            >
+              &#9728;
+            </button>
+            <div class="topbar-user">
+              <div class="topbar-user-info">
+                <span class="topbar-user-name">Alejandro Torres</span>
+                <span class="topbar-user-role">Supervisor de torre</span>
+              </div>
+              <div class="topbar-user-avatar"></div>
+                  <thead>
+                    <tr>
+                      <th>Hora</th>
+                      <th>Tarea</th>
+                      <th>Frecuencia</th>
+                      <th>Prioridad</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+            </div>
+          </header>
+
+          <section id="view-dashboard" class="view is-active">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Recepción de pipa / autotanque</h2>
+              </div>
+              <form id="pipa-form" class="form-grid">
+                <label class="field">
+                  <span class="field-label">Estación</span>
+                  <select id="pipa-station"></select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Tipo de combustible</span>
+                  <select id="pipa-fuel-type">
+                    <option value="">Seleccione</option>
+                    <option value="magna">Magna</option>
+                    <option value="premium">Premium</option>
+                    <option value="diesel">Diésel</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Litros recibidos</span>
+                  <input id="pipa-liters" type="number" min="0" step="0.01" placeholder="0" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Hora inicio descarga</span>
+                  <input id="pipa-start-time" type="time" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Hora fin descarga</span>
+                  <input id="pipa-end-time" type="time" />
+                </label>
+                <label class="field">
+                  <span class="field-label">No. pipa / unidad</span>
+                  <input id="pipa-unit" type="text" placeholder="Identificador de unidad" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Proveedor</span>
+                  <input id="pipa-supplier" type="text" placeholder="Nombre del proveedor" />
+                  <div class="field-helpers">
+                    <button type="button" class="ghost-btn" data-supplier-template="PEMEX">PEMEX</button>
+                    <button type="button" class="ghost-btn" data-supplier-template="BP Energía">BP Energía</button>
+                    <button type="button" class="ghost-btn" data-supplier-template="Otro proveedor">Otro proveedor</button>
+                  </div>
+                </label>
+                <label class="field">
+                  <span class="field-label">Documento / carta porte (URL)</span>
+                  <input id="pipa-doc-url" type="text" placeholder="https://...pdf" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Ticket / evidencia (URL)</span>
+                  <input id="pipa-ticket-url" type="text" placeholder="https://..." />
+                </label>
+                <label class="field full">
+                  <span class="field-label">Observaciones</span>
+                  <textarea id="pipa-notes" rows="3" placeholder="Comentarios sobre la descarga, sellos, diferencias de volumen, etc."></textarea>
+                </label>
+                <div class="form-actions">
+                  <button id="pipa-save" class="primary-btn" type="button">Registrar recepción</button>
+                </div>
+              </form>
+              <div id="pipa-summary" class="pipa-summary">
+                <div class="pipa-summary-title">Última recepción registrada</div>
+                <div id="pipa-summary-body" class="pipa-summary-body">
+                  Sin recepciones de pipa registradas aún para tu estación.
+                </div>
+              </div>
+            </section>
+          <div class="view-header">
+            <h1>Bienvenido <span class="accent">Alejandro Torres</span></h1>
+          </div>
+          <div class="cards-row">
+            <article class="stat-card">
+              <div class="stat-label">Operadores totales</div>
+              <div class="stat-value" id="stat-total-employees">0</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-label">Tareas por completar</div>
+              <div class="stat-value" id="stat-pending-tasks">0</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-label">Tareas en progreso</div>
+              <div class="stat-value" id="stat-inprogress-tasks">0</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-label">Tareas completadas</div>
+              <div class="stat-value" id="stat-completed-tasks">0</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-label">Tareas atrasadas</div>
+              <div class="stat-value" id="stat-overdue-tasks">0</div>
+              <div class="admin-view-toolbar" style="margin-top:8px; justify-content:flex-start;">
+                <button id="btn-tasks-today" class="ghost-btn" type="button">Solo hoy</button>
+                <button id="btn-tasks-export" class="ghost-btn" type="button">Exportar CSV</button>
+              </div>
+            </article>
+          </div>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Mi equipo</h2>
+              <button class="ghost-link" data-view="team">Ver todos</button>
+            </div>
+            <div id="dashboard-team-list" class="employee-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Calendario de actividades</h2>
+            </div>
+            <div id="employee-calendar" class="employee-calendar"></div>
+          </section>
+        </section>
+
+        <section id="view-myday" class="view">
+          <div class="view-header">
+            <h1>Mi día de hoy</h1>
+          </div>
+          <section class="panel">
+            <div class="cards-row">
+              <article class="stat-card">
+                <div class="stat-label">Tareas de hoy</div>
+                <div class="stat-value" id="myday-total">0</div>
+              </article>
+              <article class="stat-card">
+                <div class="stat-label">Pendientes</div>
+                <div class="stat-value" id="myday-pending">0</div>
+              </article>
+              <article class="stat-card">
+                <div class="stat-label">En progreso</div>
+                <div class="stat-value" id="myday-inprogress">0</div>
+              </article>
+              <article class="stat-card">
+                <div class="stat-label">Completadas</div>
+                <div class="stat-value" id="myday-done">0</div>
+              </article>
+              <article class="stat-card">
+                <div class="stat-label">Atrasadas</div>
+                <div class="stat-value" id="myday-overdue">0</div>
+              </article>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Mi turno y estación</h2>
+            </div>
+            <div id="myday-shift-summary" class="pipa-summary">
+              <div class="pipa-summary-title">Mi estación y última recepción de pipa</div>
+              <div id="myday-pipa-summary-body" class="pipa-summary-body">
+                Sin información de recepciones de pipa aún para tu estación.
+              </div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Agenda de hoy</h2>
+            </div>
+            <div class="table-wrapper">
+              <table class="table" id="myday-table">
+                <thead>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Tarea</th>
+                    <th>Frecuencia</th>
+                    <th>Prioridad</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="view-team" class="view">
+          <div class="view-header">
+            <h1>Mi equipo</h1>
+            <button id="btn-add-employee" class="primary-btn" type="button">Agregar operador</button>
+          </div>
+          <div id="team-list" class="employee-list"></div>
+        </section>
+
+        <section id="view-employee" class="view">
+          <div class="view-header employee-header">
+            <div class="employee-main">
+              <div class="employee-avatar" id="employee-avatar">LR</div>
+              <div>
+                <h1 id="employee-name">Operador</h1>
+                <div class="employee-meta" id="employee-meta"></div>
+              </div>
+            </div>
+            <div class="employee-actions">
+              <button id="btn-edit-employee" class="ghost-btn" type="button">Editar operador</button>
+              <button id="btn-delete-employee" class="danger-btn" type="button">Eliminar operador</button>
+              <button id="btn-assign-task-from-employee" class="primary-btn" type="button">Asignar tarea</button>
+            </div>
+          </div>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Tareas asignadas</h2>
+            </div>
+            <div class="table-wrapper">
+              <table class="table" id="employee-tasks-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Tarea</th>
+                    <th>Fecha límite</th>
+                    <th>Frecuencia</th>
+                    <th>Prioridad</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="view-assign" class="view">
+          <div class="view-header">
+            <h1>Asignar tarea</h1>
+          </div>
+          <section class="panel">
+            <form id="assign-form" class="form-grid">
+              <label class="field">
+                <span class="field-label">Plantilla de tarea</span>
+                <select id="assign-template">
+                  <option value="">Sin plantilla</option>
+                  <option value="apertura">Checklist de apertura</option>
+                  <option value="cierre">Checklist de cierre</option>
+                  <option value="ronda_seguridad">Ronda de seguridad</option>
+                  <option value="descarga">Recepción de autotanque</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">Operador</span>
+                <select id="assign-employee" required></select>
+              </label>
+
+              <label class="field full">
+                <span class="field-label">Título de la tarea</span>
+                <input id="assign-title" type="text" required placeholder="Revisión de surtidores" />
+              </label>
+
+              <label class="field full">
+                <span class="field-label">Descripción de la tarea</span>
+                <textarea id="assign-description" rows="4" placeholder="Describa detalladamente la tarea a realizar..."></textarea>
+              </label>
+
+              <div class="field-group">
+                <label class="field">
+                  <span class="field-label">Fecha límite</span>
+                  <input id="assign-date" type="date" required />
+                </label>
+                <label class="field">
+                  <span class="field-label">Hora</span>
+                  <input id="assign-time" type="time" required />
+                </label>
+                <label class="field">
+                  <span class="field-label">Frecuencia</span>
+                  <select id="assign-frequency">
+                    <option value="unica">Única</option>
+                    <option value="diaria">Diaria</option>
+                    <option value="semanal">Semanal</option>
+                    <option value="mensual">Mensual</option>
+                    <option value="bimestral">Bimestral</option>
+                    <option value="trimestral">Trimestral</option>
+                    <option value="anual">Anual</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Prioridad</span>
+                  <select id="assign-priority">
+                    <option value="media">Media</option>
+                    <option value="alta">Alta</option>
+                    <option value="baja">Baja</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="form-actions">
+                <button class="primary-btn" type="submit">Asignar</button>
+                <button class="ghost-btn" type="button" id="btn-cancel-assign">Cancelar</button>
+              </div>
+            </form>
+          </section>
+        </section>
+
+        <section id="view-tasks" class="view">
+          <div class="view-header">
+            <h1>Lista de tareas</h1>
+          </div>
+          <section class="panel">
+            <div class="filters-row">
+              <div class="search-box">
+                <input id="tasks-search" type="search" placeholder="Buscar por tarea o operador" />
+              </div>
+              <select id="filter-employee">
+                <option value="">Filtrar por operador</option>
+              </select>
+              <select id="filter-station">
+                <option value="">Filtrar por estación</option>
+              </select>
+              <select id="filter-status">
+                <option value="">Filtrar por estado</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="en_progreso">En progreso</option>
+                <option value="completada">Completada</option>
+              </select>
+            </div>
+            <div class="table-wrapper">
+              <table class="table" id="tasks-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Operador</th>
+                    <th>Tarea</th>
+                    <th>Fecha límite</th>
+                    <th>Frecuencia</th>
+                    <th>Prioridad</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="view-profile" class="view">
+          <div class="view-header">
+            <h1>Mi perfil</h1>
+          </div>
+          <section class="panel">
+            <div class="profile-layout">
+              <div class="profile-summary">
+                <div id="emp-profile-avatar" class="profile-avatar-lg">U</div>
+                <div class="profile-header-text">
+                  <h2 id="emp-profile-name" class="profile-name">Usuario</h2>
+                  <p id="emp-profile-role" class="profile-role">Rol</p>
+                  <p id="emp-profile-station" class="profile-station">Estación: -</p>
+                  <p id="emp-profile-last-login" class="profile-meta">Último acceso: -</p>
+                </div>
+              </div>
+              <form id="employee-profile-form" class="form-grid profile-form">
+                <label class="field">
+                  <span class="field-label">Nombre completo</span>
+                  <input id="emp-profile-fullname" type="text" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Usuario</span>
+                  <input id="emp-profile-username" type="text" disabled />
+                </label>
+                <label class="field">
+                  <span class="field-label">Rol</span>
+                  <input id="emp-profile-role-input" type="text" disabled />
+                </label>
+                <label class="field">
+                  <span class="field-label">Área</span>
+                  <input id="emp-profile-area" type="text" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Cargo / puesto</span>
+                  <input id="emp-profile-position" type="text" placeholder="Ej. Operador de isla" />
+                </label>
+                <label class="field">
+                  <span class="field-label">RFC (persona)</span>
+                  <input id="emp-profile-rfc" type="text" />
+                </label>
+                <label class="field">
+                  <span class="field-label">RFC de estación</span>
+                  <input id="emp-profile-station-rfc" type="text" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Correo electrónico</span>
+                  <input id="emp-profile-email" type="email" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Teléfono</span>
+                  <input id="emp-profile-phone" type="tel" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Foto (URL)</span>
+                  <input id="emp-profile-photo" type="text" placeholder="https://..." />
+                </label>
+                <div class="form-actions">
+                  <button class="primary-btn" type="submit">Guardar cambios</button>
+                </div>
+              </form>
+            </div>
+          </section>
+        </section>
+        </div>
+      </main>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <div id="main-help-panel" class="help-panel" style="display: none;">
+      <button id="main-help-close" type="button" class="help-panel-close">Cerrar</button>
+      <h3>Ayuda rápida panel operativo</h3>
+      <ul>
+        <li><strong>Inicio:</strong> resumen de equipo, tareas y calendario.</li>
+        <li><strong>Mi equipo:</strong> lista de operadores (solo tu área si eres jefe).</li>
+        <li><strong>Lista de tareas:</strong> filtra por operador, estación, estado o texto.</li>
+        <li><strong>Mis tareas:</strong> como operador solo ves tus propias actividades.</li>
+        <li><strong>Mi perfil:</strong> actualiza tus datos y foto para el sistema.</li>
+      </ul>
+    </div>
+
+    <div id="modal-backdrop" class="modal-backdrop hidden">
+      <div class="modal">
+        <h2 class="modal-title" id="modal-title"></h2>
+        <p class="modal-message" id="modal-message"></p>
+        <div class="modal-actions">
+          <button id="modal-confirm" class="danger-btn" type="button">Eliminar</button>
+          <button id="modal-cancel" class="ghost-btn" type="button">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="activity-backdrop" class="modal-backdrop hidden">
+      <div class="modal">
+        <h2 class="modal-title">Detalle de actividad</h2>
+        <div class="form-grid">
+          <p class="modal-message" id="activity-summary"></p>
+          <label class="field">
+            <span class="field-label">Manual (enlace PDF)</span>
+            <input id="activity-manual" type="text" placeholder="https://...pdf" />
+          </label>
+          <label class="field">
+            <span class="field-label">Observaciones</span>
+            <textarea id="activity-notes" rows="3" placeholder="Registre hallazgos, medidas de seguridad, etc."></textarea>
+          </label>
+          <label class="field">
+            <span class="field-label">Evidencia (enlace)</span>
+            <input id="activity-evidence" type="text" placeholder="Enlace a fotos, reporte, etc." />
+          </label>
+          <label class="field">
+            <span class="field-label">Estado de la actividad</span>
+            <select id="activity-status">
+              <option value="pendiente">Pendiente</option>
+              <option value="en_progreso">En progreso</option>
+              <option value="completada">Completada</option>
+            </select>
+          </label>
+          <label class="field full">
+            <span class="field-label">Checklist de la tarea</span>
+            <div id="activity-checklist" class="activity-checklist"></div>
+          </label>
+        </div>
+        <div id="activity-history" class="activity-history"></div>
+        <div class="modal-actions" style="margin-top: 12px;">
+          <button id="activity-save" class="primary-btn" type="button">Guardar</button>
+          <button id="activity-cancel" class="ghost-btn" type="button">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="reassign-backdrop" class="modal-backdrop hidden">
+      <div class="modal">
+        <h2 class="modal-title">Reasignar tarea</h2>
+        <div class="form-grid">
+          <label class="field">
+            <span class="field-label">Nuevo responsable</span>
+            <select id="reassign-employee"></select>
+          </label>
+        </div>
+        <div class="modal-actions" style="margin-top: 12px;">
+          <button id="reassign-confirm" class="primary-btn" type="button">Guardar</button>
+          <button id="reassign-cancel" class="ghost-btn" type="button">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

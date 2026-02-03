@@ -1,0 +1,18 @@
+<svg width="140" height="40" viewBox="0 0 140 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="badgeGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4CAF50"/>
+      <stop offset="1" stop-color="#166534"/>
+    </linearGradient>
+    <linearGradient id="textGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#F9FAFB"/>
+      <stop offset="1" stop-color="#E5E7EB"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="4" width="40" height="32" rx="16" fill="url(#badgeGradient)"/>
+  <circle cx="14" cy="20" r="7" stroke="#BBF7D0" stroke-width="2" fill="none"/>
+  <circle cx="14" cy="20" r="3" fill="#BBF7D0"/>
+  <path d="M24 25L30 15" stroke="#BBF7D0" stroke-width="2" stroke-linecap="round"/>
+  <text x="50" y="18" fill="url(#textGradient)" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" letter-spacing="0.18em">COG</text>
+  <text x="50" y="28" fill="#E5E7EB" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" letter-spacing="0.12em">WORK LOG</text>
+</svg>

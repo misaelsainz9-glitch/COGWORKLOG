@@ -1,0 +1,42 @@
+[
+  {
+    "username": "admin",
+    "password": "admin123",
+    "name": "Administrador",
+    "role": "admin",
+    "area": "Administración",
+    "passwordLastChanged": "2025-01-01T00:00:00.000Z"
+  },
+  {
+    "username": "jefe_norte",
+    "password": "jefe123",
+    "name": "Jefe Norte",
+    "role": "jefe_estacion",
+    "area": "Operación",
+    "passwordLastChanged": "2025-01-01T00:00:00.000Z"
+  },
+  {
+    "username": "jefe_sur",
+    "password": "jefe123",
+    "name": "Jefe Sur",
+    "role": "jefe_estacion",
+    "area": "Operación",
+    "passwordLastChanged": "2025-01-01T00:00:00.000Z"
+  },
+  {
+    "username": "operador_norte",
+    "password": "operador123",
+    "name": "Operador Norte 1",
+    "role": "empleado",
+    "area": "Operación",
+    "passwordLastChanged": "2025-01-01T00:00:00.000Z"
+  },
+  {
+    "username": "operador_sur",
+    "password": "operador123",
+    "name": "Operador Sur 1",
+    "role": "empleado",
+    "area": "Operación",
+    "passwordLastChanged": "2025-01-01T00:00:00.000Z"
+  }
+]

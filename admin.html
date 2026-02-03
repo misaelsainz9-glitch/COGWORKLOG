@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>COG WORK LOG - Administración</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <div class="admin-page">
+      <header class="admin-topbar">
+        <div class="admin-topbar-left">
+          <span class="admin-topbar-brand">COG WORK LOG</span>
+          <span class="admin-topbar-brand-secondary">COG WORK LOG</span>
+        </div>
+        <div class="admin-topbar-right">
+          <div class="admin-topbar-metrics">
+            <span id="topbar-incidents" class="admin-topbar-chip admin-topbar-chip-warning">Incidencias: 0</span>
+            <span id="topbar-overdue" class="admin-topbar-chip admin-topbar-chip-danger">Vencidos: 0</span>
+          </div>
+          <button id="theme-toggle" type="button" class="admin-topbar-theme-toggle" aria-label="Cambiar tema">
+            &#9728;
+          </button>
+          <span class="admin-topbar-icon">&#128276;</span>
+          <span class="admin-topbar-user">Administrador</span>
+          <button id="admin-logout-btn" type="button" class="admin-logout-btn">Cerrar sesión</button>
+        </div>
+      </header>
+
+      <div class="admin-layout">
+        <aside class="admin-sidebar">
+          <nav class="admin-sidebar-nav">
+            <button class="admin-sidebar-item is-active" type="button" data-view="dashboard">
+              <span class="admin-sidebar-icon">📊</span>
+              <span>Panel</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="logs">
+              <span class="admin-sidebar-icon">📘</span>
+              <span>Registros</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="alerts">
+              <span class="admin-sidebar-icon">⚠️</span>
+              <span>Alertas</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="system-log">
+              <span class="admin-sidebar-icon">📄</span>
+              <span>Reporte</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="general">
+              <span class="admin-sidebar-icon">🧾</span>
+              <span>Bitácora</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="activities">
+              <span class="admin-sidebar-icon">✅</span>
+              <span>Actividades</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="management">
+              <span class="admin-sidebar-icon">🕒</span>
+              <span>Gestión turnos</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="users">
+              <span class="admin-sidebar-icon">👤</span>
+              <span>Usuarios</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="stations">
+              <span class="admin-sidebar-icon">⛽</span>
+              <span>Estaciones</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="tv">
+              <span class="admin-sidebar-icon">📺</span>
+              <span>Modo TV</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="profile">
+              <span class="admin-sidebar-icon">⚙️</span>
+              <span>Mi perfil</span>
+            </button>
+          </nav>
+        </aside>
+
+
+      <div id="log-comments-backdrop" class="modal-backdrop hidden">
+        <div class="modal">
+          <h3 class="modal-title">Comentarios del registro</h3>
+          <p id="log-comments-meta" class="modal-message"></p>
+          <div id="log-comments-list" class="admin-comments-list"></div>
+          <div class="admin-comments-templates">
+            <button type="button" class="ghost-btn" data-comment-template="Atendido y cerrado.">Atendido</button>
+            <button type="button" class="ghost-btn" data-comment-template="Escalado a responsable de mantenimiento.">Escalado</button>
+            <button type="button" class="ghost-btn" data-comment-template="En espera de refacción / proveedor.">En espera</button>
+          </div>
+          <label class="field">
+            <span class="field-label">Nuevo comentario</span>
+            <textarea id="log-comments-input" rows="3" placeholder="Añade un comentario de seguimiento..."></textarea>
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="ghost-btn" id="log-comments-cancel">Cerrar</button>
+            <button type="button" class="primary-btn" id="log-comments-save">Guardar</button>
+          </div>
+        </div>
+      </div>
+        <main class="admin-main">
+          <section class="admin-main-card">
+            <div id="admin-view-dashboard" class="admin-view is-active">
+              <div class="admin-view-header">
+                <div class="admin-view-header-main">
+                  <h2>Panel de estación</h2>
+                  <p class="admin-view-subtitle">Resumen operativo por estación seleccionada.</p>
+                </div>
+                <label class="field">
+                  <span class="field-label">Estación</span>
+                  <select id="dashboard-station-select"></select>
+                </label>
+              </div>
+              <div class="admin-summary-chips">
+                <div class="admin-summary-chip" id="summary-logs-today">
+                  <span class="admin-summary-label">Registros hoy</span>
+                  <span class="admin-summary-value">0</span>
+                </div>
+                <div class="admin-summary-chip" id="summary-incidents-today">
+                  <span class="admin-summary-label">Incidentes hoy</span>
+                  <span class="admin-summary-value">0</span>
+                </div>
+                <div class="admin-summary-chip" id="summary-alerts-evidence">
+                  <span class="admin-summary-label">Alertas con evidencia</span>
+                  <span class="admin-summary-value">0</span>
+                </div>
+                <div class="admin-summary-chip" id="summary-fuel-today">
+                  <span class="admin-summary-label">Recepciones de pipa hoy</span>
+                  <span class="admin-summary-value">0</span>
+                </div>
+                <div class="admin-summary-chip" id="summary-tasks-total">
+                  <span class="admin-summary-label">Tareas asignadas</span>
+                  <span class="admin-summary-value">0</span>
+                </div>
+                <div class="admin-summary-chip" id="summary-tasks-pending">
+                  <span class="admin-summary-label">Tareas pendientes</span>
+                  <span class="admin-summary-value">0</span>
+                </div>
+                <div class="admin-summary-chip" id="summary-tasks-evidence">
+                  <span class="admin-summary-label">Con evidencia</span>
+                  <span class="admin-summary-value">0</span>
+                </div>
+                <div class="admin-summary-chip" id="summary-tasks-notes">
+                  <span class="admin-summary-label">Con observaciones</span>
+                  <span class="admin-summary-value">0</span>
+                </div>
+              </div>
+              <section class="admin-dashboard-tasks" id="dashboard-tasks-section">
+                <div class="admin-dashboard-tasks-header">
+                  <h3 class="admin-stat-label">Próximas tareas críticas</h3>
+                  <span class="admin-dashboard-tasks-sub">Tareas de alta prioridad para la estación seleccionada.</span>
+                </div>
+                <ul class="admin-dashboard-tasks-list" id="dashboard-tasks-list"></ul>
+              </section>
+              <div class="admin-dashboard-grid">
+                <div class="admin-dashboard-cards">
+                  <article class="admin-stat-card">
+                    <h3 class="admin-stat-label">Estación asignada</h3>
+                    <p id="dash-station-name" class="admin-stat-value">-</p>
+                    <p id="dash-station-location" class="admin-stat-sub">-</p>
+                  </article>
+                  <article class="admin-stat-card">
+                    <h3 class="admin-stat-label">Cumplimiento de actividades</h3>
+                    <p id="dash-sales" class="admin-stat-value">0%</p>
+                    <div class="admin-progress-bar">
+                      <div id="dash-sales-bar" class="admin-progress-fill" style="width: 0%"></div>
+                    </div>
+                    <p class="admin-stat-sub">Registros OK / totales</p>
+                  </article>
+                  <article class="admin-stat-card">
+                    <h3 class="admin-stat-label">Litros surtidos</h3>
+                    <p id="dash-liters" class="admin-stat-value">0 L</p>
+                    <p class="admin-stat-sub" id="dash-liters-sub">Volumen del día</p>
+                  </article>
+                  <article class="admin-stat-card">
+                    <h3 class="admin-stat-label">Última inspección</h3>
+                    <p id="dash-last-inspection" class="admin-stat-value">-</p>
+                    <p id="dash-incidents" class="admin-stat-sub">Incidencias: 0</p>
+                  </article>
+                  <article class="admin-stat-card">
+                    <h3 class="admin-stat-label">Riesgo de desabasto</h3>
+                    <p id="dash-fuel-risk" class="admin-stat-value">-</p>
+                    <p id="dash-fuel-risk-sub" class="admin-stat-sub">Basado en días desde la última recepción de pipa.</p>
+                  </article>
+                  <article class="admin-stat-card">
+                    <h3 class="admin-stat-label">Actividad por turno (hoy)</h3>
+                    <p id="dash-shifts-summary" class="admin-stat-sub">Matutino: 0 · Vespertino: 0 · Nocturno: 0</p>
+                    <p id="dash-shifts-fuel" class="admin-stat-sub">Pipas — Mat: 0 · Vesp: 0 · Noc: 0</p>
+                  </article>
+                </div>
+                <div class="admin-dashboard-charts">
+                  <article class="admin-chart-card">
+                    <h3 class="admin-stat-label">Estado de registros</h3>
+                    <canvas id="chart-status"></canvas>
+                  </article>
+                  <article class="admin-chart-card">
+                    <h3 class="admin-stat-label">Frecuencia de registros</h3>
+                    <canvas id="chart-frequency"></canvas>
+                  </article>
+                  <article class="admin-chart-card">
+                    <h3 class="admin-stat-label">Litros por tipo de gasolina (hoy)</h3>
+                    <canvas id="chart-fuel-today"></canvas>
+                    <p class="admin-chart-caption" id="chart-fuel-today-summary"></p>
+                  </article>
+                </div>
+              </div>
+            </div>
+
+            <div id="admin-view-tv" class="admin-view">
+              <div class="admin-view-header admin-tv-header">
+                <h2>Modo TV - Monitoreo en vivo</h2>
+              </div>
+              <section class="panel admin-tv-panel">
+                <div class="admin-tv-grid">
+                  <article class="admin-tv-card admin-tv-card-primary">
+                    <div class="admin-tv-label">Incidentes hoy</div>
+                    <div class="admin-tv-value" id="tv-incidents-today">0</div>
+                    <div class="admin-tv-sub" id="tv-incidents-today-sub">Warning/Error en registros de hoy</div>
+                  </article>
+                  <article class="admin-tv-card">
+                    <div class="admin-tv-label">Registros hoy</div>
+                    <div class="admin-tv-value" id="tv-logs-today">0</div>
+                    <div class="admin-tv-sub">Total de entradas de bitácora del día</div>
+                  </article>
+                  <article class="admin-tv-card">
+                    <div class="admin-tv-label">Incidentes este mes</div>
+                    <div class="admin-tv-value" id="tv-incidents-month">0</div>
+                    <div class="admin-tv-sub" id="tv-incidents-month-sub">Comparado contra el mes anterior</div>
+                  </article>
+                  <article class="admin-tv-card">
+                    <div class="admin-tv-label">Incidentes sin seguimiento</div>
+                    <div class="admin-tv-value" id="tv-incidents-nofollow">0</div>
+                    <div class="admin-tv-sub">Incidentes sin comentarios registrados</div>
+                  </article>
+                  <article class="admin-tv-card" id="tv-card-fuel-today">
+                    <div class="admin-tv-label">Pipas hoy</div>
+                    <div class="admin-tv-value" id="tv-fuel-today">0</div>
+                    <div class="admin-tv-sub" id="tv-fuel-today-sub">Litros recibidos hoy (todas las estaciones)</div>
+                  </article>
+                  <article class="admin-tv-card" id="tv-card-fuel-risk">
+                    <div class="admin-tv-label">Días desde última pipa</div>
+                    <div class="admin-tv-value" id="tv-fuel-days-since">0</div>
+                    <div class="admin-tv-sub" id="tv-fuel-days-since-sub">Calculado sobre todas las estaciones</div>
+                  </article>
+                </div>
+              </section>
+            </div>
+
+            <div id="admin-view-logs" class="admin-view">
+              <div class="admin-view-header">
+                <div class="admin-view-header-main">
+                  <h2>Registros de bitácora</h2>
+                  <p id="logs-subtitle" class="admin-view-subtitle">Vista general de todos los registros operativos.</p>
+                </div>
+                <input id="log-search" class="admin-view-search" placeholder="Buscar..." />
+              </div>
+              <div class="admin-view-legend" id="logs-legend">
+                <span class="legend-item"><span class="legend-dot legend-dot-ok"></span>OK</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-warning"></span>Advertencia</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-error"></span>Error</span>
+                <span class="legend-item"><span class="badge-priority badge-priority-alta">Alta</span></span>
+                <span class="legend-item"><span class="badge-priority badge-priority-media">Media</span></span>
+                <span class="legend-item"><span class="badge-priority badge-priority-baja">Baja</span></span>
+              </div>
+              <div class="admin-filters-row">
+                <label class="field">
+                  <span class="field-label">Estación</span>
+                  <select id="log-filter-station">
+                    <option value="">Todas</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Estado</span>
+                  <select id="log-filter-status">
+                    <option value="">Todos</option>
+                    <option value="ok">OK</option>
+                    <option value="warning">Advertencia</option>
+                    <option value="error">Error</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Frecuencia</span>
+                  <select id="log-filter-frequency">
+                    <option value="">Todas</option>
+                    <option value="unica">Única</option>
+                    <option value="diaria">Diaria</option>
+                    <option value="semanal">Semanal</option>
+                    <option value="mensual">Mensual</option>
+                    <option value="bimestral">Bimestral</option>
+                    <option value="trimestral">Trimestral</option>
+                    <option value="anual">Anual</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Combustible (pipa)</span>
+                  <select id="log-filter-fueltype">
+                    <option value="">Todos</option>
+                    <option value="magna">Magna / Verde</option>
+                    <option value="premium">Premium / Roja</option>
+                    <option value="diesel">Diésel</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Desde</span>
+                  <input id="log-filter-from" type="date" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Hasta</span>
+                  <input id="log-filter-to" type="date" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Turno</span>
+                  <select id="log-filter-shift">
+                    <option value="">Todos</option>
+                    <option value="matutino">Matutino</option>
+                    <option value="vespertino">Vespertino</option>
+                    <option value="nocturno">Nocturno</option>
+                  </select>
+                </label>
+              </div>
+              <div class="admin-active-filters" id="logs-active-filters" hidden></div>
+              <div class="admin-quick-filters">
+                <button id="btn-filter-overdue" class="ghost-btn" type="button">Solo vencidos</button>
+                <button id="btn-filter-incidents" class="ghost-btn" type="button">Solo incidentes</button>
+                <button id="btn-filter-last7" class="ghost-btn" type="button">Últimos 7 días</button>
+                <button id="btn-filter-nofollow" class="ghost-btn" type="button">Incidentes sin seguimiento</button>
+                <button id="btn-filter-fuel" class="ghost-btn" type="button">Recepciones de pipa</button>
+                <button id="btn-filter-evidence" class="ghost-btn" type="button">Con evidencia</button>
+                <button id="btn-filter-evidence-pending" class="ghost-btn" type="button">Evidencia pendiente</button>
+                <button id="btn-filter-sent" class="ghost-btn" type="button">Enviados a admin</button>
+                <button id="btn-filter-highsev" class="ghost-btn" type="button">Severidad alta</button>
+              </div>
+              <section class="admin-calendar-shell">
+                <h3 class="admin-calendar-title">Calendario de bitácora</h3>
+                <div id="admin-calendar" class="admin-calendar-placeholder"></div>
+              </section>
+              <div class="admin-view-toolbar">
+                <button id="btn-toggle-log-form" class="ghost-btn" type="button">Agregar registro</button>
+                <button id="btn-export-logs" class="ghost-btn" type="button">Exportar CSV</button>
+                <button id="btn-export-fuel-logs" class="ghost-btn" type="button">Exportar pipas</button>
+                <button id="btn-print-logs" class="ghost-btn" type="button">Imprimir</button>
+                <div class="admin-saved-views">
+                  <select id="log-saved-view">
+                    <option value="">Vistas guardadas</option>
+                  </select>
+                  <button id="btn-log-save-view" class="ghost-btn" type="button">Guardar vista</button>
+                </div>
+              </div>
+              <form id="log-form" class="form-grid admin-inline-form hidden">
+                <div class="field-group">
+                  <label class="field">
+                    <span class="field-label">Estación</span>
+                    <select id="log-station"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Usuario</span>
+                    <input id="log-user" type="text" placeholder="Usuario" />
+                  </label>
+                </div>
+                <label class="field">
+                  <span class="field-label">Plantilla de registro</span>
+                  <select id="log-template">
+                    <option value="">Sin plantilla</option>
+                    <option value="apertura">Apertura de estación</option>
+                    <option value="cierre">Cierre de estación</option>
+                    <option value="ronda_seguridad">Ronda de seguridad</option>
+                    <option value="descarga">Recepción de autotanque</option>
+                    <option value="incidente_menor">Incidente menor</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Descripción</span>
+                  <input id="log-desc" type="text" placeholder="Descripción" />
+                </label>
+                <div class="field-group">
+                  <label class="field">
+                    <span class="field-label">Fecha</span>
+                    <input id="log-date" type="date" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Hora</span>
+                    <input id="log-time" type="time" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Estado</span>
+                    <select id="log-status">
+                      <option value="ok">OK</option>
+                      <option value="warning">Advertencia</option>
+                      <option value="error">Error</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Frecuencia</span>
+                    <select id="log-frequency">
+                      <option value="unica">Única</option>
+                      <option value="diaria">Diaria</option>
+                      <option value="semanal">Semanal</option>
+                      <option value="mensual">Mensual</option>
+                      <option value="bimestral">Bimestral</option>
+                      <option value="trimestral">Trimestral</option>
+                      <option value="anual">Anual</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Turno</span>
+                    <select id="log-shift">
+                      <option value="matutino">Matutino</option>
+                      <option value="vespertino">Vespertino</option>
+                      <option value="nocturno">Nocturno</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-group">
+                  <label class="field">
+                    <span class="field-label">Tipo de incidente</span>
+                    <input id="log-incident-type" type="text" placeholder="Derrame, fuga, falla, etc." />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Severidad</span>
+                    <select id="log-severity">
+                      <option value="">N/A</option>
+                      <option value="baja">Baja</option>
+                      <option value="media">Media</option>
+                      <option value="alta">Alta</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-group">
+                  <label class="field">
+                    <span class="field-label">Manual / PDF (URL)</span>
+                    <input id="log-manual-url" type="text" placeholder="https://manual-o-procedimiento.pdf" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Evidencia (foto / archivo)</span>
+                    <input id="log-evidence-url" type="text" placeholder="https://foto-o-evidencia" />
+                  </label>
+                </div>
+                <div class="field-group">
+                  <label class="field field-checkbox-inline">
+                    <input id="log-send-admin" type="checkbox" />
+                    <span class="field-label">Marcar como enviado al administrador</span>
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button class="primary-btn" type="submit">Guardar</button>
+                </div>
+              </form>
+              <div class="table-wrapper admin-table-wrapper">
+                <table class="table" id="log-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Usuario</th>
+                      <th>Entrada</th>
+                      <th>Descripción</th>
+                      <th>Manual</th>
+                      <th>Evidencia</th>
+                      <th>Evidencia rev.</th>
+                      <th>Fecha</th>
+                      <th>Hora</th>
+                      <th>Turno</th>
+                      <th>Tipo incidente</th>
+                      <th>Severidad</th>
+                      <th>Estado</th>
+                      <th>Aprobación</th>
+                      <th>Comentarios</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="admin-pagination" id="log-pagination">
+                <button type="button" id="log-page-prev" class="ghost-btn">Anterior</button>
+                <span id="log-pagination-info" class="admin-pagination-info">0 registros</span>
+                <button type="button" id="log-page-next" class="ghost-btn">Siguiente</button>
+              </div>
+            </div>
+
+            <div id="admin-view-alerts" class="admin-view">
+              <div class="admin-view-header">
+                <div class="admin-view-header-main">
+                  <h2>Alertas / Incidentes</h2>
+                  <p id="alerts-subtitle" class="admin-view-subtitle">Incidentes relevantes por severidad y envío a administración.</p>
+                </div>
+                <input id="alerts-search" class="admin-view-search" placeholder="Buscar..." />
+              </div>
+              <div class="admin-view-legend" id="alerts-legend">
+                <span class="legend-item"><span class="legend-dot legend-dot-ok"></span>OK</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-warning"></span>Advertencia</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-error"></span>Error</span>
+                <span class="legend-item"><span class="badge-priority badge-priority-alta">Alta</span></span>
+                <span class="legend-item"><span class="badge-priority badge-priority-media">Media</span></span>
+                <span class="legend-item"><span class="badge-priority badge-priority-baja">Baja</span></span>
+                <span class="legend-item legend-item-sent"><span class="legend-sent-mark"></span>Enviado a admin</span>
+              </div>
+              <p id="alerts-evidence-summary" class="admin-view-subtitle">Alertas con evidencia: 0</p>
+              <div class="admin-filters-row">
+                <label class="field">
+                  <span class="field-label">Estación</span>
+                  <select id="alerts-filter-station">
+                    <option value="">Todas</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Severidad</span>
+                  <select id="alerts-filter-severity">
+                    <option value="">Todas</option>
+                    <option value="alta">Alta</option>
+                    <option value="media">Media</option>
+                    <option value="baja">Baja</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Desde</span>
+                  <input id="alerts-filter-from" type="date" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Hasta</span>
+                  <input id="alerts-filter-to" type="date" />
+                </label>
+                <label class="field field-inline-checkbox">
+                  <span class="field-label">Solo enviados</span>
+                  <input id="alerts-filter-sent" type="checkbox" />
+                </label>
+              </div>
+              <div class="admin-active-filters" id="alerts-active-filters" hidden></div>
+              <div class="table-wrapper admin-table-wrapper">
+                <table class="table" id="alerts-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Estación</th>
+                      <th>Usuario</th>
+                      <th>Descripción</th>
+                      <th>Tipo incidente</th>
+                      <th>Severidad</th>
+                      <th>Evidencia</th>
+                      <th>Enviado a admin</th>
+                      <th>Fecha</th>
+                      <th>Hora</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="admin-view-general" class="admin-view">
+              <div class="admin-view-header">
+                <h2>Bitácora general del sistema</h2>
+                <input id="general-search" class="admin-view-search" placeholder="Buscar..." />
+              </div>
+              <div class="table-wrapper admin-table-wrapper">
+                <table class="table" id="general-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Usuario</th>
+                      <th>Rol</th>
+                      <th>Actividad</th>
+                      <th>Descripción</th>
+                      <th>Fecha</th>
+                      <th>Hora</th>
+                      <th>Estado</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="admin-view-activities" class="admin-view">
+              <div class="admin-view-header">
+                <div class="admin-view-header-main">
+                  <h2>Actividades de operación</h2>
+                  <p class="admin-view-subtitle">Todas las tareas registradas por operadores, jefes de estación y auditores.</p>
+                </div>
+                <input id="activities-search" class="admin-view-search" placeholder="Buscar por tarea, usuario o estación..." />
+              </div>
+              <div class="admin-filters-row">
+                <label class="field">
+                  <span class="field-label">Estación</span>
+                  <select id="activities-filter-station">
+                    <option value="">Todas</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Usuario</span>
+                  <select id="activities-filter-user">
+                    <option value="">Todos</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Estado</span>
+                  <select id="activities-filter-status">
+                    <option value="">Todos</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="en_progreso">En progreso</option>
+                    <option value="completada">Completada</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Desde</span>
+                  <input id="activities-filter-from" type="date" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Hasta</span>
+                  <input id="activities-filter-to" type="date" />
+                </label>
+              </div>
+              <div class="admin-active-filters" id="activities-active-filters" hidden></div>
+              <div class="table-wrapper admin-table-wrapper">
+                <table class="table" id="activities-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Estación</th>
+                      <th>Usuario</th>
+                      <th>Tarea</th>
+                      <th>Fecha</th>
+                      <th>Hora</th>
+                      <th>Frecuencia</th>
+                      <th>Prioridad</th>
+                      <th>Estado</th>
+                      <th>Manual</th>
+                      <th>Evidencia</th>
+                      <th>Observaciones</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="admin-view-stations" class="admin-view">
+              <div class="admin-view-header">
+                <h2>Generar estaciones</h2>
+                <input id="station-search" class="admin-view-search" placeholder="Buscar estación..." />
+              </div>
+              <div class="admin-stations-layout">
+                <form id="station-form" class="form-grid admin-station-form">
+                  <label class="field">
+                    <span class="field-label">Nombre de la estación</span>
+                    <input id="station-name" type="text" required />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Ubicación</span>
+                    <input id="station-location" type="text" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Descripción</span>
+                    <input id="station-desc" type="text" />
+                  </label>
+                  <div class="form-actions">
+                    <button class="primary-btn" type="submit">Generar</button>
+                    <button class="ghost-btn" type="button" id="station-clear">Limpiar</button>
+                  </div>
+                </form>
+
+                <div class="admin-stations-panel">
+                  <h3 class="admin-stations-title">Estaciones y operadores</h3>
+                  <div id="stations-list" class="admin-stations-list"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="admin-view-system-log" class="admin-view">
+              <div class="admin-view-header">
+                <h2>Reporte mensual</h2>
+              </div>
+              <div class="admin-filters-row">
+                <label class="field">
+                  <span class="field-label">Estación</span>
+                  <select id="report-station">
+                    <option value="">Todas</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Mes</span>
+                  <input id="report-month" type="month" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Combustible (pipas)</span>
+                  <select id="report-fueltype">
+                    <option value="">Todos</option>
+                    <option value="magna">Magna / Verde</option>
+                    <option value="premium">Premium / Roja</option>
+                    <option value="diesel">Diésel</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </label>
+              </div>
+              <div class="admin-view-toolbar">
+                <button id="btn-print-report" class="ghost-btn" type="button">Imprimir reporte</button>
+                <button id="btn-export-report-csv" class="ghost-btn" type="button">Exportar CSV reporte</button>
+                <button id="btn-export-backup" class="ghost-btn" type="button">Exportar respaldo</button>
+                <button id="btn-import-backup" class="ghost-btn" type="button">Importar respaldo</button>
+                <span class="admin-toolbar-hint">(solo administrador) Importar respaldo sobrescribe los datos actuales.</span>
+              </div>
+              <section class="panel">
+                <div class="cards-row">
+                  <article class="stat-card">
+                    <div class="stat-label">Registros totales</div>
+                    <div class="stat-value" id="report-total-logs">0</div>
+                  </article>
+                  <article class="stat-card">
+                    <div class="stat-label">OK</div>
+                    <div class="stat-value" id="report-ok">0</div>
+                  </article>
+                  <article class="stat-card">
+                    <div class="stat-label">Advertencia</div>
+                    <div class="stat-value" id="report-warning">0</div>
+                  </article>
+                  <article class="stat-card">
+                    <div class="stat-label">Error</div>
+                    <div class="stat-value" id="report-error">0</div>
+                  </article>
+                  <article class="stat-card">
+                    <div class="stat-label">Incidentes</div>
+                    <div class="stat-value" id="report-incidents">0</div>
+                  </article>
+                  <article class="stat-card">
+                    <div class="stat-label">Incidentes severidad baja</div>
+                    <div class="stat-value" id="report-incidents-low">0</div>
+                  </article>
+                  <article class="stat-card">
+                    <div class="stat-label">Incidentes severidad media</div>
+                    <div class="stat-value" id="report-incidents-medium">0</div>
+                  </article>
+                  <article class="stat-card">
+                    <div class="stat-label">Incidentes severidad alta</div>
+                    <div class="stat-value" id="report-incidents-high">0</div>
+                  </article>
+                  <article class="stat-card">
+                    <div class="stat-label">Recepciones de pipa</div>
+                    <div class="stat-value" id="report-fuel-deliveries">0</div>
+                  </article>
+                  <article class="stat-card">
+                    <div class="stat-label">Litros recibidos</div>
+                    <div class="stat-value" id="report-fuel-liters">0 L</div>
+                  </article>
+                </div>
+                <p id="report-trend-text" class="admin-report-trend"></p>
+                <div class="table-wrapper admin-table-wrapper" style="margin-top: 12px;">
+                  <table class="table" id="report-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Hora</th>
+                        <th>Estación</th>
+                        <th>Usuario</th>
+                        <th>Descripción</th>
+                        <th>Evidencia</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="table-wrapper admin-table-wrapper" style="margin-top: 16px;">
+                  <h3 class="admin-subtitle">Resumen por área (mes seleccionado)</h3>
+                  <table class="table" id="report-area-table">
+                    <thead>
+                      <tr>
+                        <th>Área</th>
+                        <th>Registros totales</th>
+                        <th>Incidentes</th>
+                        <th>OK</th>
+                        <th>Advertencia</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="table-wrapper admin-table-wrapper" style="margin-top: 16px;">
+                  <h3 class="admin-subtitle">Top tipos de incidente (mes seleccionado)</h3>
+                  <table class="table" id="report-incidenttype-table">
+                    <thead>
+                      <tr>
+                        <th>Tipo de incidente</th>
+                        <th>Cantidad</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="table-wrapper admin-table-wrapper" style="margin-top: 16px;">
+                  <h3 class="admin-subtitle">Top estaciones con incidentes (mes seleccionado)</h3>
+                  <table class="table" id="report-stationrank-table">
+                    <thead>
+                      <tr>
+                        <th>Estación</th>
+                        <th>Incidentes</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="table-wrapper admin-table-wrapper" style="margin-top: 16px;">
+                  <h3 class="admin-subtitle">Resumen por turno (mes seleccionado)</h3>
+                  <table class="table" id="report-shift-table">
+                    <thead>
+                      <tr>
+                        <th>Turno</th>
+                        <th>Registros totales</th>
+                        <th>Incidentes</th>
+                        <th>OK</th>
+                        <th>Advertencia</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="table-wrapper admin-table-wrapper" style="margin-top: 16px;">
+                  <h3 class="admin-subtitle">Recepciones de pipa (mes seleccionado)</h3>
+                  <table class="table" id="report-fuel-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Hora</th>
+                        <th>Estación</th>
+                        <th>Usuario</th>
+                        <th>Combustible</th>
+                        <th>Litros</th>
+                        <th>Evidencia</th>
+                        <th>Estado revisión</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="table-wrapper admin-table-wrapper" style="margin-top: 16px;">
+                  <h3 class="admin-subtitle">Gráfica litros por tipo de combustible (mes seleccionado)</h3>
+                  <div style="min-height: 260px;">
+                    <canvas id="chart-fuel-month"></canvas>
+                  </div>
+                  <p class="admin-chart-caption" id="chart-fuel-month-summary"></p>
+                </div>
+                <div class="table-wrapper admin-table-wrapper" style="margin-top: 16px;">
+                  <h3 class="admin-subtitle">Litros por tipo de combustible (mes seleccionado)</h3>
+                  <table class="table" id="report-fueltype-table">
+                    <thead>
+                      <tr>
+                        <th>Combustible</th>
+                        <th>Litros</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            <div id="admin-view-management" class="admin-view">
+              <div class="admin-view-header">
+                <h2>Gestión</h2>
+              </div>
+              <div class="admin-stations-layout">
+                <form id="shift-form" class="form-grid admin-station-form">
+                  <label class="field">
+                    <span class="field-label">Estación</span>
+                    <select id="shift-station" required></select>
+                  </label>
+                  <div class="field-group">
+                    <label class="field">
+                      <span class="field-label">Fecha</span>
+                      <input id="shift-date" type="date" required />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">Turno</span>
+                      <select id="shift-shift" required>
+                        <option value="matutino">Matutino</option>
+                        <option value="vespertino">Vespertino</option>
+                        <option value="nocturno">Nocturno</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="field-group">
+                    <label class="field">
+                      <span class="field-label">Entrega turno</span>
+                      <input id="shift-entrega" type="text" placeholder="Nombre quien entrega" required />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">Recibe turno</span>
+                      <input id="shift-recibe" type="text" placeholder="Nombre quien recibe" required />
+                    </label>
+                  </div>
+                  <label class="field">
+                    <span class="field-label">Novedades del turno</span>
+                    <textarea id="shift-notes" rows="3" placeholder="Resumen de novedades, incidentes, pendientes..."></textarea>
+                  </label>
+                  <div class="form-actions">
+                    <button class="primary-btn" type="submit">Registrar entrega/recepción</button>
+                  </div>
+                </form>
+
+                <div class="admin-stations-panel">
+                  <h3 class="admin-stations-title">Historial de entrega / recepción de turno</h3>
+                  <div class="table-wrapper admin-table-wrapper">
+                    <table class="table" id="shift-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Estación</th>
+                          <th>Fecha</th>
+                          <th>Turno</th>
+                          <th>Entrega</th>
+                          <th>Recibe</th>
+                          <th>Novedades</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="admin-view-users" class="admin-view">
+              <div class="admin-view-header">
+                <h2>Usuarios</h2>
+              </div>
+              <div class="admin-users-layout">
+                <form id="user-form" class="form-grid admin-user-form">
+                  <label class="field">
+                    <span class="field-label">Nombre completo</span>
+                    <input id="user-name" type="text" required />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Usuario</span>
+                    <input id="user-username" type="text" required />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Contraseña inicial</span>
+                    <input id="user-password" type="text" required />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Rol</span>
+                    <select id="user-role" required>
+                      <option value="">Selecciona un rol</option>
+                      <option value="admin">Administrador</option>
+                      <option value="jefe_estacion">Jefe de estación</option>
+                      <option value="auditor">Auditor (solo lectura)</option>
+                      <option value="empleado">Operador</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Estación</span>
+                    <select id="user-station">
+                      <option value="">Sin estación</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Área</span>
+                    <input id="user-area" type="text" placeholder="Ej. Operación" />
+                  </label>
+                  <div class="form-actions">
+                    <button class="primary-btn" type="submit">Agregar usuario</button>
+                  </div>
+                </form>
+
+                <div class="admin-users-panel">
+                  <h3 class="admin-stations-title">Usuarios registrados</h3>
+                  <div class="table-wrapper admin-table-wrapper">
+                    <table class="table" id="users-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Nombre</th>
+                          <th>Usuario</th>
+                            <th>Contraseña</th>
+                          <th>Rol</th>
+                          <th>Estación</th>
+                          <th>Área</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                  <div class="admin-pagination" id="users-pagination">
+                    <button type="button" id="users-page-prev" class="ghost-btn">Anterior</button>
+                    <span id="users-pagination-info" class="admin-pagination-info">0 usuarios</span>
+                    <button type="button" id="users-page-next" class="ghost-btn">Siguiente</button>
+                  </div>
+                  <div id="user-summary" class="admin-user-summary">
+                    <h4 class="admin-user-summary-title">Resumen del usuario seleccionado</h4>
+                    <p id="user-summary-placeholder" class="admin-placeholder-text">
+                      Selecciona un usuario de la tabla para ver su resumen de bitácora y tareas.
+                    </p>
+                    <div id="user-summary-body" class="admin-user-summary-grid" hidden></div>
+                    <div id="user-tasks-panel" class="admin-user-tasks" hidden>
+                      <h4 class="admin-user-summary-title">Actividades / tareas del usuario</h4>
+                      <div class="table-wrapper admin-table-wrapper">
+                        <table class="table" id="user-tasks-table">
+                          <thead>
+                            <tr>
+                              <th>ID</th>
+                              <th>Tarea</th>
+                              <th>Fecha</th>
+                              <th>Hora</th>
+                              <th>Frecuencia</th>
+                              <th>Prioridad</th>
+                              <th>Estado</th>
+                              <th>Manual (PDF)</th>
+                              <th>Evidencia</th>
+                              <th>Observaciones</th>
+                            </tr>
+                          </thead>
+                          <tbody></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="admin-view-profile" class="admin-view">
+              <div class="admin-view-header">
+                <h2>Mi perfil</h2>
+              </div>
+              <div class="admin-users-layout">
+                <section class="admin-users-panel">
+                  <div class="profile-header">
+                    <div id="profile-avatar" class="profile-avatar-lg">U</div>
+                    <div class="profile-header-text">
+                      <h3 id="profile-header-name" class="profile-name">Usuario</h3>
+                      <p id="profile-header-role" class="profile-role">Rol</p>
+                      <p id="profile-header-station" class="profile-station">Estación asignada: -</p>
+                      <p id="profile-last-login" class="profile-meta">Último acceso: -</p>
+                    </div>
+                  </div>
+                </section>
+                <form id="profile-form" class="form-grid admin-user-form">
+                  <label class="field">
+                    <span class="field-label">Nombre completo</span>
+                    <input id="profile-fullname" type="text" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Usuario</span>
+                    <input id="profile-username" type="text" disabled />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Rol</span>
+                    <input id="profile-role" type="text" disabled />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Área</span>
+                    <input id="profile-area" type="text" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Cargo / puesto</span>
+                    <input id="profile-position" type="text" placeholder="Ej. Operador de isla" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">RFC (persona)</span>
+                    <input id="profile-rfc" type="text" placeholder="RFC del colaborador" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">RFC de estación</span>
+                    <input id="profile-station-rfc" type="text" placeholder="RFC fiscal de la estación" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Correo electrónico</span>
+                    <input id="profile-email" type="email" placeholder="correo@ejemplo.com" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Teléfono de contacto</span>
+                    <input id="profile-phone" type="tel" placeholder="81-0000-0000" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Foto (URL)</span>
+                    <input id="profile-photo" type="text" placeholder="https://..." />
+                  </label>
+                  <div class="form-actions">
+                    <button class="primary-btn" type="submit">Guardar cambios</button>
+                  </div>
+                </form>
+                <form id="profile-password-form" class="form-grid admin-user-form profile-password-form">
+                  <h3 class="admin-subtitle" style="grid-column: 1 / -1; margin-top: 8px;">Seguridad de la cuenta</h3>
+                  <label class="field">
+                    <span class="field-label">Contraseña actual</span>
+                    <input id="profile-current-password" type="password" autocomplete="current-password" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Nueva contraseña</span>
+                    <input id="profile-new-password" type="password" autocomplete="new-password" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Confirmar nueva contraseña</span>
+                    <input id="profile-new-password-confirm" type="password" autocomplete="new-password" />
+                  </label>
+                  <div class="form-actions">
+                    <button class="ghost-btn" type="submit">Cambiar contraseña</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <div class="admin-main-search-row">
+            <input id="global-search-input" class="admin-search-input" placeholder="Búsqueda global (registros, usuarios, estaciones)" />
+            <button id="global-search-btn" class="admin-search-green" type="button"></button>
+            <button class="admin-search-add" type="button">+</button>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <input id="backup-file-input" type="file" accept="application/json" style="display:none" />
+
+    <div id="evidence-viewer-backdrop" class="modal-backdrop hidden">
+      <div class="modal modal-lg">
+        <h3 class="modal-title" id="evidence-viewer-title">Evidencia</h3>
+        <div id="evidence-viewer-content" class="evidence-viewer-content"></div>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="evidence-viewer-close">Cerrar</button>
+          <a id="evidence-viewer-open" class="primary-btn" href="#" target="_blank" rel="noopener noreferrer">Abrir en pestaña nueva</a>
+        </div>
+      </div>
+    </div>
+
+    <div id="admin-help-panel" class="help-panel" style="display: none;">
+      <button id="admin-help-close" type="button" class="help-panel-close">Cerrar</button>
+      <h3>Ayuda rápida administración</h3>
+      <ul>
+        <li><strong>Naves estado:</strong> resumen de bitácora y gráficas por estación.</li>
+        <li><strong>Ver registros:</strong> bitácora detallada con filtros, calendario y comentarios.</li>
+        <li><strong>Reporte mensual:</strong> concentrado por estación/mes e incidencias por severidad.</li>
+        <li><strong>Gestión:</strong> entrega/recepción de turno.</li>
+        <li><strong>Usuarios y estaciones:</strong> catálogos (solo admin) para control de acceso.</li>
+      </ul>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="admin.js"></script>
+  </body>
+</html>

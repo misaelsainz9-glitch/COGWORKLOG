@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>COG WORK LOG - Iniciar sesión</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="login-page">
+      <header class="login-topbar">
+        <div class="login-topbar-left">
+          <span class="login-topbar-title">COG WORK LOG</span>
+        </div>
+        <div class="login-topbar-right">
+          <span class="login-bell">&#128276;</span>
+          <button
+            id="login-theme-toggle"
+            type="button"
+            class="admin-topbar-theme-toggle"
+            aria-label="Cambiar tema"
+          >
+            &#9728;
+          </button>
+          <span class="login-user-name">Administrador1</span>
+        </div>
+      </header>
+
+      <main class="login-main">
+        <section class="login-panel login-panel-left">
+          <div class="login-logo-circle">
+            <img src="logo-cog.png.png" alt="COG WORK LOG" class="logo-img-big" />
+          </div>
+          <div class="login-left-text">
+            <div class="login-company-name">Consulting Oil &amp; Gas</div>
+            <div class="login-company-sub">Registro de tareas y turnos</div>
+          </div>
+        </section>
+
+        <section class="login-panel login-panel-center">
+          <div class="login-avatar-placeholder">
+            <div class="login-avatar-icon"></div>
+          </div>
+        </section>
+
+        <section class="login-panel login-panel-right">
+          <div class="login-form-card">
+            <h1 class="login-title-main">Iniciar sesión</h1>
+            <form id="login-form" class="login-form">
+              <label class="field">
+                <span class="field-label">Usuario</span>
+                <input id="login-user" type="text" required placeholder="Usuario" />
+              </label>
+              <label class="field">
+                <span class="field-label">Contraseña</span>
+                <input id="login-pass" type="password" required placeholder="Contraseña" />
+              </label>
+              <label class="field">
+                <span class="field-label">Rol</span>
+                <select id="login-role" required>
+                  <option value="">Selecciona un rol</option>
+                  <option value="admin">Administrador general</option>
+                  <option value="jefe_estacion">Jefe de estación</option>
+                  <option value="auditor">Auditor (solo lectura)</option>
+                  <option value="empleado">Operador</option>
+                </select>
+              </label>
+              <div class="login-actions-row">
+                <button type="submit" class="primary-btn">Ingresar</button>
+                <button type="button" class="ghost-btn">Registrarse</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </main>
+
+      <footer class="login-footer">
+        <span class="login-footer-text">Sistema COG Work Log · Todos los derechos reservados</span>
+      </footer>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <div id="login-help-panel" class="help-panel" style="display: none;">
+      <button id="login-help-close" type="button" class="help-panel-close">Cerrar</button>
+      <h3>Ayuda rápida de acceso</h3>
+      <ul>
+        <li>Usa el <strong>Usuario</strong> configurado en el módulo de Usuarios.</li>
+        <li>El <strong>Rol</strong> debe coincidir con el del catálogo (admin, jefe, operador).</li>
+        <li>Como <strong>operador</strong> entrarás al panel de tareas.</li>
+        <li>Como <strong>admin/jefe</strong> entrarás al panel de administración.</li>
+      </ul>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="login.js"></script>
+  </body>
+</html>
