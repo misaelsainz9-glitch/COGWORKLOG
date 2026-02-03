@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -102,6 +103,26 @@ function loadOperationsState() {
   }
 }
 
+async function getAdminStateCombined() {
+  try {
+    const fromDb = await db.getJson('admin');
+    if (fromDb && typeof fromDb === 'object') return fromDb;
+  } catch (e) {
+    console.error('Error leyendo admin-state desde BD, usando archivo', e);
+  }
+  return loadAdminState();
+}
+
+async function getOperationsStateCombined() {
+  try {
+    const fromDb = await db.getJson('operations');
+    if (fromDb && typeof fromDb === 'object') return fromDb;
+  } catch (e) {
+    console.error('Error leyendo operations-state desde BD, usando archivo', e);
+  }
+  return loadOperationsState();
+}
+
 // Estado básico para probar que el backend responde
 app.get('/api/status', (req, res) => {
   res.json({
@@ -167,37 +188,56 @@ app.post('/api/login', (req, res) => {
   });
 });
 
-// Lectura de logs (por ahora demo en memoria)
-// Ahora se conecta a admin-data.json para devolver registros reales
-app.get('/api/logs', (req, res) => {
-  const state = loadAdminState();
-  const logs = Array.isArray(state.logs) ? state.logs : [];
-  res.json({ ok: true, logs });
+// Lectura de logs desde el estado de administración (BD si está disponible, archivo si no)
+app.get('/api/logs', async (req, res) => {
+  try {
+    const state = await getAdminStateCombined();
+    const logs = Array.isArray(state.logs) ? state.logs : [];
+    res.json({ ok: true, logs });
+  } catch (e) {
+    console.error('Error en /api/logs', e);
+    res.status(500).json({ ok: false, message: 'No se pudieron leer los logs' });
+  }
 });
 
-// Lectura de bitácora general
-app.get('/api/general-logs', (req, res) => {
-  const state = loadAdminState();
-  const generalLogs = Array.isArray(state.generalLogs)
-    ? state.generalLogs
-    : [];
-  res.json({ ok: true, generalLogs });
+// Lectura de bitácora general desde el estado de administración
+app.get('/api/general-logs', async (req, res) => {
+  try {
+    const state = await getAdminStateCombined();
+    const generalLogs = Array.isArray(state.generalLogs)
+      ? state.generalLogs
+      : [];
+    res.json({ ok: true, generalLogs });
+  } catch (e) {
+    console.error('Error en /api/general-logs', e);
+    res.status(500).json({ ok: false, message: 'No se pudo leer la bitácora general' });
+  }
 });
 
 // Exponer el estado de administración completo (solo lectura)
-app.get('/api/admin-state', (req, res) => {
-  const state = loadAdminState();
-  res.json({ ok: true, state });
+app.get('/api/admin-state', async (req, res) => {
+  try {
+    const state = await getAdminStateCombined();
+    res.json({ ok: true, state });
+  } catch (e) {
+    console.error('Error en /api/admin-state', e);
+    res.status(500).json({ ok: false, message: 'No se pudo leer el estado de administración' });
+  }
 });
 
 // Exponer el estado operativo (solo lectura)
-app.get('/api/operations-state', (req, res) => {
-  const state = loadOperationsState();
-  res.json({ ok: true, state });
+app.get('/api/operations-state', async (req, res) => {
+  try {
+    const state = await getOperationsStateCombined();
+    res.json({ ok: true, state });
+  } catch (e) {
+    console.error('Error en /api/operations-state', e);
+    res.status(500).json({ ok: false, message: 'No se pudo leer el estado operativo' });
+  }
 });
 
 // Actualizar estado de administración (sobrescribe admin-data.json)
-app.post('/api/admin-state', (req, res) => {
+app.post('/api/admin-state', async (req, res) => {
   try {
     const body = req.body || {};
     const state = body && body.state && typeof body.state === 'object'
@@ -216,6 +256,12 @@ app.post('/api/admin-state', (req, res) => {
     const filePath = path.join(__dirname, 'admin-data.json');
     fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf8');
 
+    try {
+      await db.saveJson('admin', normalized);
+    } catch (e) {
+      console.error('No se pudo guardar admin-state en BD, pero sí en archivo', e);
+    }
+
     return res.json({ ok: true });
   } catch (e) {
     console.error('No se pudo guardar admin-state', e);
@@ -224,7 +270,7 @@ app.post('/api/admin-state', (req, res) => {
 });
 
 // Actualizar estado operativo (sobrescribe operations-data.json)
-app.post('/api/operations-state', (req, res) => {
+app.post('/api/operations-state', async (req, res) => {
   try {
     const body = req.body || {};
     const state = body && body.state && typeof body.state === 'object'
@@ -241,6 +287,12 @@ app.post('/api/operations-state', (req, res) => {
     const filePath = path.join(__dirname, 'operations-data.json');
     fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf8');
 
+    try {
+      await db.saveJson('operations', normalized);
+    } catch (e) {
+      console.error('No se pudo guardar operations-state en BD, pero sí en archivo', e);
+    }
+
     return res.json({ ok: true });
   } catch (e) {
     console.error('No se pudo guardar operations-state', e);
@@ -248,6 +300,13 @@ app.post('/api/operations-state', (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`COG Work Log API escuchando en puerto ${PORT}`);
-});
+db
+  .init()
+  .catch((e) => {
+    console.error('No se pudo inicializar la base de datos, se usarán solo archivos JSON', e);
+  })
+  .finally(() => {
+    app.listen(PORT, () => {
+      console.log(`COG Work Log API escuchando en puerto ${PORT}`);
+    });
+  });
