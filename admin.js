@@ -45,6 +45,8 @@ let stationsHighlightId = ""; // estación a resaltar al abrir la vista de estac
 let stationsEditingId = ""; // estación actualmente en edición desde el formulario
 let pendingLogStationFilterId = ""; // filtro de estación a aplicar al abrir la vista de bitácora desde el globo
 
+let currentUser = null;
+
 function saveAdminState() {
   window.localStorage.setItem(
     ADMIN_STORAGE_KEY,
@@ -67,6 +69,40 @@ function saveAdminState() {
 
   // Best-effort: reflejar cambios también en backend si está disponible
   syncAdminStateToBackendIfAvailable();
+}
+
+// Sincronización básica con backend (opcional). En esta versión en Render usamos misma URL base.
+async function syncAdminStateFromBackendIfAvailable() {
+  if (!BACKEND_ADMIN_ENABLED) return;
+  try {
+    const resp = await fetch("/api/admin-state", {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data || data.ok === false) return;
+    const state = data.state || data;
+    if (!state || typeof state !== "object") return;
+
+    adminState.version = typeof state.version === "number" ? state.version : ADMIN_DATA_VERSION;
+    adminState.stations = Array.isArray(state.stations) ? state.stations : [];
+    adminState.logs = Array.isArray(state.logs) ? state.logs : [];
+    adminState.generalLogs = Array.isArray(state.generalLogs)
+      ? state.generalLogs
+      : [];
+    adminState.users = Array.isArray(state.users) ? state.users : [];
+    adminState.shifts = Array.isArray(state.shifts) ? state.shifts : [];
+
+    saveAdminState();
+    try {
+      window.localStorage.setItem(ADMIN_LAST_SYNC_KEY, new Date().toISOString());
+    } catch (e) {
+      // silencioso
+    }
+  } catch (e) {
+    // silencioso: si falla, seguimos trabajando solo con localStorage
+  }
 }
 
 // Datos semilla mínimos: sin estaciones ni bitácoras demo, solo el usuario inicial
