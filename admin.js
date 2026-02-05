@@ -118,6 +118,50 @@ function saveAdminState() {
   syncAdminStateToBackendIfAvailable();
 }
 
+function loadAdminState() {
+  try {
+    const raw = window.localStorage.getItem(ADMIN_STORAGE_KEY);
+    if (!raw) {
+      // Si no hay nada en localStorage, sembramos estado inicial mínimo
+      seedAdminState();
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      seedAdminState();
+      return;
+    }
+
+    if (parsed.version !== ADMIN_DATA_VERSION) {
+      // Esquema viejo: regenerar con la semilla nueva
+      seedAdminState();
+      return;
+    }
+
+    adminState.version = parsed.version || ADMIN_DATA_VERSION;
+    adminState.stations = Array.isArray(parsed.stations)
+      ? parsed.stations
+      : [];
+    adminState.logs = Array.isArray(parsed.logs) ? parsed.logs : [];
+    adminState.generalLogs = Array.isArray(parsed.generalLogs)
+      ? parsed.generalLogs
+      : [];
+    adminState.users = Array.isArray(parsed.users) ? parsed.users : [];
+    adminState.shifts = Array.isArray(parsed.shifts) ? parsed.shifts : [];
+    adminState.securitySettings =
+      parsed.securitySettings || { ...DEFAULT_SECURITY_SETTINGS };
+    adminState.alertSettings =
+      parsed.alertSettings || { ...DEFAULT_ALERT_SETTINGS };
+    adminState.alerts = Array.isArray(parsed.alerts) ? parsed.alerts : [];
+    adminState.maintenance = Array.isArray(parsed.maintenance)
+      ? parsed.maintenance
+      : [];
+  } catch (e) {
+    // Si algo falla, volvemos a un estado limpio
+    seedAdminState();
+  }
+}
+
 // Sincronización básica con backend (opcional). En esta versión en Render usamos misma URL base.
 async function syncAdminStateFromBackendIfAvailable() {
   if (!BACKEND_ADMIN_ENABLED) return;
