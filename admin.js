@@ -7445,6 +7445,48 @@ function renderProfileView() {
 }
 
 
+// Mapa básico de permisos por rol y helper "can" para validar acciones
+const ROLE_PERMISSIONS = {
+  admin: [
+    "manageUsers",
+    "manageStations",
+    "manageShifts",
+    "createLog",
+    "commentLogs",
+    "exportLogs",
+    "printLogs",
+  ],
+  jefe_estacion: [
+    "createLog",
+    "commentLogs",
+  ],
+  auditor: [
+    "exportLogs",
+    "printLogs",
+  ],
+  empleado: [
+    "createLog",
+  ],
+};
+
+function can(permission) {
+  try {
+    const user = currentUser || (typeof getCurrentUser === "function" ? getCurrentUser() : null);
+    if (!user) return false;
+
+    // Usuario maestro siempre tiene todos los permisos
+    if ((user.username || "").toLowerCase() === "misa") {
+      return true;
+    }
+
+    const role = user.role || "empleado";
+    const perms = ROLE_PERMISSIONS[role] || [];
+    return perms.includes(permission);
+  } catch (e) {
+    return false;
+  }
+}
+
 function applySidebarByRole() {
   if (!currentUser) return;
 
@@ -8946,6 +8988,21 @@ window.addEventListener("DOMContentLoaded", () => {
     loadAdminState();
 
     currentUser = getCurrentUser();
+    // Normalizar siempre al usuario maestro como admin con área corporativa
+    try {
+      if (
+        currentUser &&
+        (currentUser.username || "").toLowerCase() === "misa" &&
+        currentUser.role !== "admin"
+      ) {
+        const name = currentUser.name || "Misa";
+        const area = currentUser.area || "Corporativo";
+        setAuthenticated(name, "admin", area, "misa");
+        currentUser = getCurrentUser();
+      }
+    } catch (e) {
+      // silencioso
+    }
     resolveAssignedStationId();
     applySavedTheme();
     updateAdminLastSyncLabel();
