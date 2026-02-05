@@ -49,6 +49,8 @@ let dashboardStationId = ""; // estación seleccionada en el panel principal
 let currentUser = null;
 let adminConnectionStatusTimer = null;
 let adminLastBackendStatus = "unknown";
+let statusChart = null;
+let frequencyChart = null;
 
 function updateAdminLastSyncLabel() {
   try {
