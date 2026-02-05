@@ -7824,15 +7824,10 @@ function updateDashboardCharts({ okCount, warningCount, errorCount, freqCounts, 
               },
             },
           },
-          dashboardDoughnutCenter: {
-            label: "Registros",
-            color: axisColor,
-            fontSize: 15,
-          },
         },
         cutout: "65%",
       },
-      plugins: [dashboardDoughnutCenter],
+      plugins: [],
     });
   }
 
