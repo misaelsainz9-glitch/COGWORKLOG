@@ -47,6 +47,53 @@ let pendingLogStationFilterId = ""; // filtro de estación a aplicar al abrir la
 
 let currentUser = null;
 
+function updateAdminLastSyncLabel() {
+  try {
+    const el = document.getElementById("admin-last-sync");
+    if (!el) return;
+    const raw = window.localStorage.getItem(ADMIN_LAST_SYNC_KEY);
+    if (!raw) {
+      el.textContent = "Sincronizado: nunca";
+      return;
+    }
+    const d = new Date(raw);
+    if (!d || isNaN(d.getTime())) {
+      el.textContent = "Sincronizado: nunca";
+      return;
+    }
+    const date = d.toISOString().slice(0, 10);
+    const time = d.toTimeString().slice(0, 5);
+    el.textContent = `Sincronizado: ${date} ${time}`;
+  } catch (e) {
+    // silencioso
+  }
+}
+
+function updateAdminConnectionStatusLabel(status) {
+  try {
+    const el = document.getElementById("admin-connection-status");
+    if (!el) return;
+
+    if (!status) {
+      el.textContent = "Servidor: sin comprobar";
+      el.classList.remove("is-ok", "is-error");
+      return;
+    }
+
+    if (status.ok) {
+      el.textContent = "Servidor: en línea";
+      el.classList.add("is-ok");
+      el.classList.remove("is-error");
+    } else {
+      el.textContent = "Servidor: sin conexión";
+      el.classList.add("is-error");
+      el.classList.remove("is-ok");
+    }
+  } catch (e) {
+    // silencioso
+  }
+}
+
 function saveAdminState() {
   window.localStorage.setItem(
     ADMIN_STORAGE_KEY,
@@ -126,6 +173,23 @@ async function syncAdminStateToBackendIfAvailable() {
     });
   } catch (e) {
     // silencioso: si falla la sync, no rompemos el cliente
+  }
+}
+
+async function checkBackendConnectionStatus() {
+  try {
+    const resp = await fetch("/api/status", {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+    });
+    if (!resp.ok) {
+      updateAdminConnectionStatusLabel({ ok: false });
+      return;
+    }
+    const data = await resp.json().catch(() => ({}));
+    updateAdminConnectionStatusLabel({ ok: true, data });
+  } catch (e) {
+    updateAdminConnectionStatusLabel({ ok: false });
   }
 }
 
