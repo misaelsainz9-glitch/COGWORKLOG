@@ -94,8 +94,9 @@ function loadAdminState() {
     try {
       parsed = JSON.parse(raw);
     } catch (parseErr) {
-      // Si el JSON está corrupto, no mostramos el stack completo, solo un aviso breve
-      console.warn('admin-data.json inválido, usando estado por defecto');
+      // Si el JSON está corrupto, ignoramos el archivo y usamos la semilla segura.
+      // Esto no es un error crítico: la app sigue funcionando con el usuario maestro por defecto.
+      console.log('admin-data.json ignorado (contenido no válido); usando estado por defecto seguro');
       return getDefaultAdminState();
     }
 
