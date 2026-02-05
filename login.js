@@ -1,5 +1,8 @@
 const ADMIN_STORAGE_KEY = "cog-work-log-admin";
 const THEME_STORAGE_KEY = "cog-work-log-theme";
+// Versión de datos de administración que espera este cliente
+// Debe mantenerse en sincronía con ADMIN_DATA_VERSION de admin.js
+const ADMIN_DATA_VERSION_LOGIN = 11;
 
 // Configuración opcional de backend
 // Usamos misma origen (Render o servidor local que sirve los estáticos y la API)
@@ -7,6 +10,12 @@ const BACKEND_URL = "";
 const BACKEND_LOGIN_ENABLED = true;
 
 const LOGIN_ATTEMPTS_KEY = "cog-work-log-login-attempts";
+
+const DEFAULT_SECURITY_SETTINGS = {
+  maxFailedAttempts: 5,
+  lockWindowMinutes: 10,
+  passwordExpiryDays: 90,
+};
 
 function getLoginAttempts() {
   try {
@@ -25,6 +34,34 @@ function saveLoginAttempts(map) {
     window.localStorage.setItem(LOGIN_ATTEMPTS_KEY, JSON.stringify(map || {}));
   } catch (e) {
     console.error("No se pudieron guardar intentos de login", e);
+  }
+}
+
+function getSecuritySettings() {
+  try {
+    const raw = window.localStorage.getItem(ADMIN_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_SECURITY_SETTINGS };
+    const parsed = JSON.parse(raw);
+    const cfg = parsed && parsed.securitySettings;
+    const base = { ...DEFAULT_SECURITY_SETTINGS };
+    if (cfg && typeof cfg === "object") {
+      if (typeof cfg.maxFailedAttempts === "number" && cfg.maxFailedAttempts > 0) {
+        base.maxFailedAttempts = cfg.maxFailedAttempts;
+      }
+      if (typeof cfg.lockWindowMinutes === "number" && cfg.lockWindowMinutes > 0) {
+        base.lockWindowMinutes = cfg.lockWindowMinutes;
+      }
+      if (
+        typeof cfg.passwordExpiryDays === "number" &&
+        cfg.passwordExpiryDays > 0 &&
+        cfg.passwordExpiryDays <= 365
+      ) {
+        base.passwordExpiryDays = cfg.passwordExpiryDays;
+      }
+    }
+    return base;
+  } catch (e) {
+    return { ...DEFAULT_SECURITY_SETTINGS };
   }
 }
 
@@ -68,15 +105,55 @@ async function tryBackendLogin(username, password, role) {
 }
 
 function getAdminUsers() {
-  const raw = window.localStorage.getItem(ADMIN_STORAGE_KEY);
-  if (!raw) return [];
+  let parsed = null;
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed.users) ? parsed.users : [];
+    const raw = window.localStorage.getItem(ADMIN_STORAGE_KEY);
+    if (raw) {
+      parsed = JSON.parse(raw);
+    }
   } catch (e) {
     console.error("No se pudieron leer usuarios de administración", e);
-    return [];
+    parsed = null;
   }
+
+  const needsReset =
+    !parsed ||
+    typeof parsed !== "object" ||
+    parsed.version !== ADMIN_DATA_VERSION_LOGIN ||
+    !Array.isArray(parsed.users) ||
+    !parsed.users.length;
+
+  if (needsReset) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    parsed = {
+      version: ADMIN_DATA_VERSION_LOGIN,
+      stations: [],
+      logs: [],
+      generalLogs: [],
+      users: [
+        {
+          id: 1,
+          name: "Misa",
+          username: "misa",
+          password: "Pepepito2",
+          role: "admin",
+          stationId: "",
+          area: "Corporativo",
+          passwordLastChanged: todayIso,
+          locked: false,
+        },
+      ],
+      shifts: [],
+    };
+
+    try {
+      window.localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(parsed));
+    } catch (e) {
+      console.error("No se pudo guardar estado de administración inicial", e);
+    }
+  }
+
+  return parsed && Array.isArray(parsed.users) ? parsed.users : [];
 }
 
 function showToast(message, type = "error") {
@@ -151,23 +228,43 @@ window.addEventListener("DOMContentLoaded", () => {
     const username = nameInput.value.trim();
     const password = passInput.value.trim();
     const role = roleSelectSubmit.value;
+    const usernameKey = (username || "").toLowerCase();
+    // Consideramos "misa" usuario maestro independientemente del rol elegido
+    const isAdminMaster = usernameKey === "misa";
+    const isAdminRole = role === "admin";
+    const securitySettings = getSecuritySettings();
     const area = "";
 
     if (!password || !role) return;
 
     // Verificar bloqueos por intentos fallidos recientes
-    const attempts = getLoginAttempts();
-    const record = attempts[username] || { count: 0, last: 0 };
+    let attempts = getLoginAttempts();
+    // Para el usuario maestro limpiamos siempre el historial de intentos
+    if (isAdminMaster && attempts[usernameKey]) {
+      delete attempts[usernameKey];
+      saveLoginAttempts(attempts);
+    }
+    const record = attempts[usernameKey] || { count: 0, last: 0 };
     const nowMs = Date.now();
-    const windowMs = 10 * 60 * 1000; // 10 minutos
+    const windowMinutes = securitySettings.lockWindowMinutes || DEFAULT_SECURITY_SETTINGS.lockWindowMinutes;
+    const windowMs = windowMinutes * 60 * 1000;
 
-    if (record.count >= 5 && record.last && nowMs - record.last < windowMs) {
+    // Para el usuario maestro ADMIN no aplicamos bloqueo temporal
+    const maxFailed = securitySettings.maxFailedAttempts || DEFAULT_SECURITY_SETTINGS.maxFailedAttempts;
+    if (
+      !isAdminMaster &&
+      !isAdminRole &&
+      maxFailed > 0 &&
+      record.count >= maxFailed &&
+      record.last &&
+      nowMs - record.last < windowMs
+    ) {
       showToast(
         "Cuenta temporalmente bloqueada por múltiples intentos fallidos. Intenta de nuevo en unos minutos.",
         "error"
       );
 
-      // Registrar bloqueo por intentos fallidos en bitácora general
+      // Registrar bloqueo por intentos fallidos en bitácora general y marcar usuario bloqueado
       try {
         const rawAdmin = window.localStorage.getItem(ADMIN_STORAGE_KEY);
         const adminData = rawAdmin ? JSON.parse(rawAdmin) : {};
@@ -194,6 +291,18 @@ window.addEventListener("DOMContentLoaded", () => {
           status: "error",
         });
 
+        // Marcar usuario como bloqueado si existe en el catálogo de administración
+        if (Array.isArray(adminData.users)) {
+          const key = usernameKey;
+          const user = adminData.users.find(
+            (u) => (u.username || "").toLowerCase() === key
+          );
+          if (user) {
+            user.locked = true;
+            user.lockedAt = now.toISOString();
+          }
+        }
+
         adminData.generalLogs = generalLogs;
         window.localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(adminData));
       } catch (e) {
@@ -214,12 +323,14 @@ window.addEventListener("DOMContentLoaded", () => {
     } else if (backendResult && !backendResult.ok) {
       // Backend respondió pero con error de credenciales u otra validación
       showToast(backendResult.message || "No se pudo iniciar sesión.", "error");
-      const next = {
-        count: record.count + 1,
-        last: nowMs,
-      };
-      attempts[username] = next;
-      saveLoginAttempts(attempts);
+      if (!isAdminMaster && !isAdminRole) {
+        const next = {
+          count: record.count + 1,
+          last: nowMs,
+        };
+        attempts[usernameKey] = next;
+        saveLoginAttempts(attempts);
+      }
 
       // Registrar intento fallido de backend en bitácora general
       try {
@@ -265,6 +376,20 @@ window.addEventListener("DOMContentLoaded", () => {
     const adminUsers = getAdminUsers();
     let matchedUser = null;
 
+    // Si la cuenta está marcada como bloqueada por el administrador, impedir acceso
+    if (!isAdminMaster && adminUsers.length) {
+      const lockedUser = adminUsers.find(
+        (u) => (u.username || "").toLowerCase() === usernameKey && u.locked
+      );
+      if (lockedUser) {
+        showToast(
+          "Tu cuenta está bloqueada por el administrador. Contacta al área de administración.",
+          "error"
+        );
+        return;
+      }
+    }
+
     if (backendUser) {
       matchedUser = {
         username: backendUser.username || username,
@@ -276,15 +401,20 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     if (adminUsers.length && !fromBackend) {
-      matchedUser = adminUsers.find((u) => u.username === username);
+      const lookup = usernameKey;
+      matchedUser = adminUsers.find(
+        (u) => (u.username || "").toLowerCase() === lookup
+      );
       if (!matchedUser) {
         showToast("Usuario no registrado en el módulo de administración.", "error");
-        const next = {
-          count: record.count + 1,
-          last: nowMs,
-        };
-        attempts[username] = next;
-        saveLoginAttempts(attempts);
+        if (!isAdminMaster && !isAdminRole) {
+          const next = {
+            count: record.count + 1,
+            last: nowMs,
+          };
+          attempts[usernameKey] = next;
+          saveLoginAttempts(attempts);
+        }
 
         // Registrar intento fallido
         try {
@@ -323,12 +453,14 @@ window.addEventListener("DOMContentLoaded", () => {
       }
       if (matchedUser.password && matchedUser.password !== password) {
         showToast("Contraseña incorrecta.", "error");
-        const next = {
-          count: record.count + 1,
-          last: nowMs,
-        };
-        attempts[username] = next;
-        saveLoginAttempts(attempts);
+        if (!isAdminMaster && !isAdminRole) {
+          const next = {
+            count: record.count + 1,
+            last: nowMs,
+          };
+          attempts[usernameKey] = next;
+          saveLoginAttempts(attempts);
+        }
 
         // Registrar intento fallido por contraseña
         try {
@@ -367,12 +499,14 @@ window.addEventListener("DOMContentLoaded", () => {
       }
       if (matchedUser.role && matchedUser.role !== role) {
         showToast("El rol seleccionado no coincide con el usuario configurado.", "warning");
-        const next = {
-          count: record.count + 1,
-          last: nowMs,
-        };
-        attempts[username] = next;
-        saveLoginAttempts(attempts);
+        if (!isAdminMaster && !isAdminRole) {
+          const next = {
+            count: record.count + 1,
+            last: nowMs,
+          };
+          attempts[usernameKey] = next;
+          saveLoginAttempts(attempts);
+        }
 
         // Registrar intento fallido por rol incorrecto
         try {
@@ -434,8 +568,8 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     // Login correcto: limpiar contador de intentos para este usuario
-    if (attempts[username]) {
-      delete attempts[username];
+    if (attempts[usernameKey]) {
+      delete attempts[usernameKey];
       saveLoginAttempts(attempts);
     }
 
@@ -443,13 +577,16 @@ window.addEventListener("DOMContentLoaded", () => {
 
     let mustChangePassword = false;
 
-    // Caducidad de contraseña (más de 90 días)
+    // Caducidad de contraseña según políticas (por defecto 90 días)
     try {
       if (matchedUser && matchedUser.passwordLastChanged) {
         const last = new Date(matchedUser.passwordLastChanged);
         const diffMs = Date.now() - last.getTime();
         const days = diffMs / (1000 * 60 * 60 * 24);
-        if (days > 90) {
+        const expiryDays =
+          (securitySettings && securitySettings.passwordExpiryDays) ||
+          DEFAULT_SECURITY_SETTINGS.passwordExpiryDays;
+        if (days > expiryDays) {
           if (finalRole === "empleado") {
             // Para operadores solo mostramos advertencia
             showToast(

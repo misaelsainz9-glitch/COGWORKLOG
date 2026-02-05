@@ -35,6 +35,10 @@
               <span id="topbar-my-pending" class="topbar-chip topbar-chip-warning">Pendientes: 0</span>
               <span id="topbar-my-overdue" class="topbar-chip topbar-chip-danger">Atrasadas: 0</span>
             </div>
+            <span
+              id="operations-last-sync"
+              class="topbar-sync"
+            >Sincronizado: nunca</span>
             <button
               id="operations-sync-btn"
               type="button"
@@ -165,6 +169,10 @@
                 <button id="btn-tasks-export" class="ghost-btn" type="button">Exportar CSV</button>
               </div>
             </article>
+            <article class="stat-card">
+              <div class="stat-label">Tareas en riesgo (SLA)</div>
+              <div class="stat-value" id="stat-risk-tasks">0</div>
+            </article>
           </div>
 
           <section class="panel">
@@ -173,6 +181,25 @@
               <button class="ghost-link" data-view="team">Ver todos</button>
             </div>
             <div id="dashboard-team-list" class="employee-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Próximas tareas críticas</h2>
+              <button
+                id="btn-dashboard-critical-view-tasks"
+                class="ghost-link"
+                type="button"
+              >
+                Ver lista de tareas
+              </button>
+            </div>
+            <div
+              id="dashboard-critical-list"
+              class="admin-security-list"
+            >
+              Sin tareas críticas registradas para tu equipo.
+            </div>
           </section>
 
           <section class="panel">
@@ -380,6 +407,18 @@
                 <option value="en_progreso">En progreso</option>
                 <option value="completada">Completada</option>
               </select>
+              <select id="filter-date-range">
+                <option value="">Rango de fecha</option>
+                <option value="today">Solo hoy</option>
+                <option value="7">Próximos 7 días</option>
+                <option value="30">Próximos 30 días</option>
+                <option value="overdue">Solo atrasadas</option>
+              </select>
+              <label class="tasks-risk-toggle">
+                <input id="filter-risk-only" type="checkbox" />
+                <span>Solo tareas en riesgo (SLA)</span>
+              </label>
+              <button id="btn-tasks-clear" class="ghost-btn" type="button">Limpiar filtros</button>
             </div>
             <div class="table-wrapper">
               <table class="table" id="tasks-table">
@@ -461,6 +500,25 @@
                 <label class="field">
                   <span class="field-label">Foto (URL)</span>
                   <input id="emp-profile-photo" type="text" placeholder="https://..." />
+                </label>
+                <hr class="form-separator" />
+                <div class="field full">
+                  <h3 style="margin: 8px 0 4px;">Seguridad</h3>
+                  <p class="help-text" style="margin: 0 0 8px; font-size: 0.85rem; color: var(--text-muted, #666);">
+                    Cambia tu contraseña de acceso. Recuerda no compartirla con nadie.
+                  </p>
+                </div>
+                <label class="field">
+                  <span class="field-label">Contraseña actual</span>
+                  <input id="emp-profile-current-password" type="password" autocomplete="current-password" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Nueva contraseña</span>
+                  <input id="emp-profile-new-password" type="password" autocomplete="new-password" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Confirmar nueva contraseña</span>
+                  <input id="emp-profile-new-password-confirm" type="password" autocomplete="new-password" />
                 </label>
                 <div class="form-actions">
                   <button class="primary-btn" type="submit">Guardar cambios</button>

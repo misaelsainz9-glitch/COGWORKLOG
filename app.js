@@ -5,9 +5,11 @@ const ADMIN_STORAGE_KEY = "cog-work-log-admin";
 // Usamos misma origen (Render o servidor local que sirve los estáticos y la API)
 const BACKEND_URL = "";
 const BACKEND_OPERATIONS_ENABLED = true;
-// Versión del esquema de datos de demo para poder regenerar seeds cuando cambian
+// Versión del esquema de datos para poder regenerar datos cuando cambian
 // Incrementar este valor cuando se agreguen/ajusten empleados o tareas semilla
-const DATA_VERSION = 8;
+const DATA_VERSION = 11;
+const TASK_FILTERS_KEY = "cog-work-log-ops-task-filters";
+const OPS_LAST_SYNC_KEY = "cog-work-log-ops-last-sync";
 
 const STATUS = {
   PENDING: "pendiente",
@@ -85,6 +87,49 @@ function resetIdleTimer() {
     }
     window.location.href = "login.html";
   }, IDLE_TIMEOUT_MS);
+}
+
+function updateOperationsLastSyncLabel() {
+  try {
+    const el = document.getElementById("operations-last-sync");
+    if (!el) return;
+
+    const raw = window.localStorage.getItem(OPS_LAST_SYNC_KEY);
+    if (!raw) {
+      el.textContent = "Sincronizado: nunca";
+      return;
+    }
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) {
+      el.textContent = "Sincronizado: nunca";
+      return;
+    }
+    const dateStr = d.toLocaleDateString("es-MX", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const timeStr = d.toLocaleTimeString("es-MX", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    el.textContent = `Sincronizado: ${dateStr} ${timeStr}`;
+  } catch (e) {
+    console.warn(
+      "No se pudo actualizar etiqueta de última sincronización (operaciones)",
+      e
+    );
+  }
+}
+
+function setOperationsLastSyncNow() {
+  try {
+    const nowIso = new Date().toISOString();
+    window.localStorage.setItem(OPS_LAST_SYNC_KEY, nowIso);
+    updateOperationsLastSyncLabel();
+  } catch (e) {
+    console.warn("No se pudo guardar última sincronización (operaciones)", e);
+  }
 }
 
 function setupCrossTabLogoutMain() {
@@ -233,6 +278,9 @@ async function syncOperationsStateFromBackendIfAvailable() {
 
     // Persistir también en localStorage para que el resto del flujo siga igual
     saveState();
+
+    // Marcar última sincronización exitosa
+    setOperationsLastSyncNow();
   } catch (e) {
     console.warn("No se pudo sincronizar operaciones desde backend", e);
   }
@@ -259,561 +307,10 @@ async function syncOperationsStateToBackendIfAvailable() {
 
 
 function seedInitialData() {
-  const employees = [
-    // Encargados de estación (jefes)
-    {
-      id: "e1",
-      name: "Encargado Las Torres",
-      role: "Jefe de estación",
-      station: "Gasolinera Las Torres · Monterrey, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e2",
-      name: "Encargado Cumbres",
-      role: "Jefe de estación",
-      station: "Gasolinera Cumbres · Monterrey, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e3",
-      name: "Encargado Centro",
-      role: "Jefe de estación",
-      station: "Gasolinera Centro · Monterrey, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e4",
-      name: "Encargado Aeropuerto",
-      role: "Jefe de estación",
-      station: "Gasolinera Aeropuerto · Apodaca, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e5",
-      name: "Encargado Valle",
-      role: "Jefe de estación",
-      station: "Gasolinera Valle Oriente · San Pedro, N.L.",
-      area: "Operación",
-    },
-
-    // Operadores Las Torres
-    {
-      id: "e6",
-      name: "Operador Torres 1",
-      role: "Operador de bomba",
-      station: "Gasolinera Las Torres · Monterrey, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e7",
-      name: "Operador Torres 2",
-      role: "Operador de bomba",
-      station: "Gasolinera Las Torres · Monterrey, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e8",
-      name: "Operador Torres 3",
-      role: "Operador de bomba",
-      station: "Gasolinera Las Torres · Monterrey, N.L.",
-      area: "Operación",
-    },
-
-    // Operadores Cumbres
-    {
-      id: "e9",
-      name: "Operador Cumbres 1",
-      role: "Operador de bomba",
-      station: "Gasolinera Cumbres · Monterrey, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e10",
-      name: "Operador Cumbres 2",
-      role: "Operador de bomba",
-      station: "Gasolinera Cumbres · Monterrey, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e11",
-      name: "Operador Cumbres 3",
-      role: "Operador de bomba",
-      station: "Gasolinera Cumbres · Monterrey, N.L.",
-      area: "Operación",
-    },
-
-    // Operadores Centro
-    {
-      id: "e12",
-      name: "Operador Centro 1",
-      role: "Operador de bomba",
-      station: "Gasolinera Centro · Monterrey, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e13",
-      name: "Operador Centro 2",
-      role: "Operador de bomba",
-      station: "Gasolinera Centro · Monterrey, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e14",
-      name: "Operador Centro 3",
-      role: "Operador de bomba",
-      station: "Gasolinera Centro · Monterrey, N.L.",
-      area: "Operación",
-    },
-
-    // Operadores Aeropuerto
-    {
-      id: "e15",
-      name: "Operador Aeropuerto 1",
-      role: "Operador de bomba",
-      station: "Gasolinera Aeropuerto · Apodaca, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e16",
-      name: "Operador Aeropuerto 2",
-      role: "Operador de bomba",
-      station: "Gasolinera Aeropuerto · Apodaca, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e17",
-      name: "Operador Aeropuerto 3",
-      role: "Operador de bomba",
-      station: "Gasolinera Aeropuerto · Apodaca, N.L.",
-      area: "Operación",
-    },
-
-    // Operadores Valle Oriente
-    {
-      id: "e18",
-      name: "Operador Valle 1",
-      role: "Operador de bomba",
-      station: "Gasolinera Valle Oriente · San Pedro, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e19",
-      name: "Operador Valle 2",
-      role: "Operador de bomba",
-      station: "Gasolinera Valle Oriente · San Pedro, N.L.",
-      area: "Operación",
-    },
-    {
-      id: "e20",
-      name: "Operador Valle 3",
-      role: "Operador de bomba",
-      station: "Gasolinera Valle Oriente · San Pedro, N.L.",
-      area: "Operación",
-    },
-
-    // Auditores (comparten estaciones)
-    {
-      id: "e21",
-      name: "Auditor Operativo",
-      role: "Auditor de seguridad",
-      station: "Cobertura multiestación",
-      area: "Seguridad",
-    },
-    {
-      id: "e22",
-      name: "Auditor Seguridad",
-      role: "Auditor de seguridad",
-      station: "Cobertura multiestación",
-      area: "Seguridad",
-    },
-  ];
-
-  const today = new Date();
-  const todayIso = today.toISOString().slice(0, 10);
-  const isoOffset = (days) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
-  };
-
-  const tasks = [
-    // Actividades base para Encargados
-    {
-      id: 21,
-      employeeId: "e1",
-      title: "Revisión diaria de bitácora Las Torres",
-      description: "Revisar novedades del día y asignar seguimientos en Gasolinera Las Torres.",
-      dueDate: todayIso,
-      dueTime: "08:00",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[0].station,
-    },
-    {
-      id: 22,
-      employeeId: "e2",
-      title: "Revisión diaria de bitácora Cumbres",
-      description: "Revisar novedades del día y asignar seguimientos en Gasolinera Cumbres.",
-      dueDate: todayIso,
-      dueTime: "08:00",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[1].station,
-    },
-    {
-      id: 23,
-      employeeId: "e3",
-      title: "Revisión diaria de bitácora Centro",
-      description: "Revisar novedades del día y asignar seguimientos en Gasolinera Centro.",
-      dueDate: todayIso,
-      dueTime: "08:00",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[2].station,
-    },
-    {
-      id: 24,
-      employeeId: "e4",
-      title: "Revisión diaria de bitácora Aeropuerto",
-      description: "Revisar novedades del día y asignar seguimientos en Gasolinera Aeropuerto.",
-      dueDate: todayIso,
-      dueTime: "08:00",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[3].station,
-    },
-    {
-      id: 25,
-      employeeId: "e5",
-      title: "Revisión diaria de bitácora Valle Oriente",
-      description: "Revisar novedades del día y asignar seguimientos en Gasolinera Valle Oriente.",
-      dueDate: todayIso,
-      dueTime: "08:00",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[4].station,
-    },
-
-    // Checklist de apertura por estación
-    {
-      id: 26,
-      employeeId: "e6",
-      title: "Checklist de apertura islas Las Torres",
-      description: "Verificar extintores, conos, kits de derrames y señalización en islas.",
-      dueDate: todayIso,
-      dueTime: "06:30",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[5].station,
-      checklist: getChecklistForTemplate("apertura"),
-    },
-    {
-      id: 27,
-      employeeId: "e9",
-      title: "Checklist de apertura islas Cumbres",
-      description: "Verificar extintores, conos, kits de derrames y señalización en islas.",
-      dueDate: todayIso,
-      dueTime: "06:30",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[8].station,
-      checklist: getChecklistForTemplate("apertura"),
-    },
-    {
-      id: 28,
-      employeeId: "e12",
-      title: "Checklist de apertura islas Centro",
-      description: "Verificar extintores, conos, kits de derrames y señalización en islas.",
-      dueDate: todayIso,
-      dueTime: "06:30",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[11].station,
-      checklist: getChecklistForTemplate("apertura"),
-    },
-    {
-      id: 29,
-      employeeId: "e15",
-      title: "Checklist de apertura islas Aeropuerto",
-      description: "Verificar extintores, conos, kits de derrames y señalización en islas.",
-      dueDate: todayIso,
-      dueTime: "06:30",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[14].station,
-      checklist: getChecklistForTemplate("apertura"),
-    },
-    {
-      id: 30,
-      employeeId: "e18",
-      title: "Checklist de apertura islas Valle Oriente",
-      description: "Verificar extintores, conos, kits de derrames y señalización en islas.",
-      dueDate: todayIso,
-      dueTime: "06:30",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[17].station,
-      checklist: getChecklistForTemplate("apertura"),
-    },
-
-    // Rondas de seguridad perimetral por estación
-    {
-      id: 31,
-      employeeId: "e21",
-      title: "Ronda de seguridad multiestación",
-      description: "Recorrido perimetral y revisión de cámaras en todas las gasolineras.",
-      dueDate: todayIso,
-      dueTime: "20:00",
-      status: STATUS.PENDING,
-      frequency: "semanal",
-      priority: "alta",
-      station: "Cobertura multiestación",
-      checklist: getChecklistForTemplate("ronda_seguridad"),
-    },
-    {
-      id: 32,
-      employeeId: "e22",
-      title: "Auditoría interna de checklist estaciones",
-      description: "Revisar cumplimiento de checklist críticos en estaciones seleccionadas.",
-      dueDate: isoOffset(-2),
-      dueTime: "16:00",
-      status: STATUS.IN_PROGRESS,
-      frequency: "mensual",
-      priority: "alta",
-      station: "Cobertura multiestación",
-    },
-
-    // Actividades adicionales específicas por estación
-    // Gasolinera Las Torres
-    {
-      id: 33,
-      employeeId: "e6",
-      title: "Limpieza profunda de islas Las Torres",
-      description: "Limpieza detallada de charolas, rejillas y base de bombas en Las Torres.",
-      dueDate: isoOffset(2),
-      dueTime: "11:30",
-      status: STATUS.PENDING,
-      frequency: "semanal",
-      priority: "media",
-      station: employees[5].station,
-    },
-    {
-      id: 34,
-      employeeId: "e7",
-      title: "Verificación de inventario de pista Las Torres",
-      description: "Revisar absorbente, conos, señalamientos y kits de derrames en Las Torres.",
-      dueDate: isoOffset(5),
-      dueTime: "15:00",
-      status: STATUS.PENDING,
-      frequency: "semanal",
-      priority: "media",
-      station: employees[6].station,
-    },
-
-    // Gasolinera Cumbres
-    {
-      id: 35,
-      employeeId: "e9",
-      title: "Ronda de seguridad zona descarga Cumbres",
-      description: "Verificar barreras, conos y señalización en zona de descarga de Cumbres.",
-      dueDate: todayIso,
-      dueTime: "21:30",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[8].station,
-    },
-    {
-      id: 36,
-      employeeId: "e10",
-      title: "Verificación semanal de extintores Cumbres",
-      description: "Comprobar presión, sellos y ubicación de extintores en Cumbres.",
-      dueDate: isoOffset(3),
-      dueTime: "10:45",
-      status: STATUS.PENDING,
-      frequency: "semanal",
-      priority: "alta",
-      station: employees[9].station,
-    },
-
-    // Gasolinera Centro
-    {
-      id: 37,
-      employeeId: "e12",
-      title: "Control de imagen en fachada Centro",
-      description: "Revisar limpieza de fachada, cristales y señalización en Centro.",
-      dueDate: isoOffset(1),
-      dueTime: "17:00",
-      status: STATUS.PENDING,
-      frequency: "semanal",
-      priority: "media",
-      station: employees[11].station,
-    },
-    {
-      id: 38,
-      employeeId: "e13",
-      title: "Revisión de iluminación nocturna Centro",
-      description: "Validar luminarias en islas y accesos en turno nocturno.",
-      dueDate: isoOffset(1),
-      dueTime: "22:30",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[12].station,
-    },
-
-    // Gasolinera Aeropuerto
-    {
-      id: 39,
-      employeeId: "e15",
-      title: "Verificación de protocolos de emergencia Aeropuerto",
-      description: "Confirmar accesos, rutas de evacuación y equipos críticos en Aeropuerto.",
-      dueDate: isoOffset(7),
-      dueTime: "09:30",
-      status: STATUS.PENDING,
-      frequency: "mensual",
-      priority: "alta",
-      station: employees[14].station,
-    },
-    {
-      id: 40,
-      employeeId: "e16",
-      title: "Ronda de cámaras y CCTV Aeropuerto",
-      description: "Verificar funcionamiento de cámaras y ángulos de cobertura.",
-      dueDate: todayIso,
-      dueTime: "23:00",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[15].station,
-    },
-
-    // Gasolinera Valle Oriente
-    {
-      id: 41,
-      employeeId: "e18",
-      title: "Control de inventario tienda Valle",
-      description: "Revisar existencias de lubricantes, aditivos y productos de tienda.",
-      dueDate: todayIso,
-      dueTime: "12:00",
-      status: STATUS.PENDING,
-      frequency: "semanal",
-      priority: "media",
-      station: employees[17].station,
-    },
-    {
-      id: 42,
-      employeeId: "e19",
-      title: "Verificación de terminales bancarias Valle",
-      description: "Conciliar ventas de terminales contra sistema de punto de venta.",
-      dueDate: isoOffset(-1),
-      dueTime: "21:00",
-      status: STATUS.PENDING,
-      frequency: "diaria",
-      priority: "alta",
-      station: employees[18].station,
-    },
-  ];
-
-  // Generar tareas base diarias, semanales y mensuales para todos los operadores
-  let nextId = tasks.length
-    ? tasks.reduce((max, t) => Math.max(max, t.id || 0), 0) + 1
-    : 1;
-
-  employees.forEach((emp) => {
-    if (!emp || !emp.id) return;
-
-    const baseDesc = `Tarea base para ${emp.name} en ${emp.station}`;
-
-    [
-      { freq: "diaria", title: "Tarea diaria base", days: 0, time: "08:15" },
-      { freq: "semanal", title: "Actividad semanal base", days: 2, time: "11:30" },
-      { freq: "mensual", title: "Actividad mensual base", days: 5, time: "16:45" },
-    ].forEach((cfg) => {
-      tasks.push({
-        id: nextId,
-        employeeId: emp.id,
-        title: cfg.title,
-        description: baseDesc,
-        dueDate: cfg.days === 0 ? todayIso : isoOffset(cfg.days),
-        dueTime: cfg.time,
-        status: STATUS.PENDING,
-        frequency: cfg.freq,
-        priority: "media",
-        station: emp.station,
-      });
-      nextId += 1;
-    });
-  });
-
-  // Asignar manual, evidencia y observaciones iniciales a tareas semilla (ejemplos variados)
-  tasks.forEach((t) => {
-    const title = (t.title || "").toLowerCase();
-
-    // Manual de referencia
-    if (!t.manualUrl) {
-      if (title.includes("checklist de apertura")) {
-        t.manualUrl = "https://ejemplo.com/manuales/checklist-apertura-estacion.pdf";
-      } else if (title.includes("ronda de seguridad")) {
-        t.manualUrl = "https://ejemplo.com/manuales/procedimiento-ronda-seguridad.pdf";
-      } else if (title.includes("autotanque") || title.includes("descarga")) {
-        t.manualUrl = "https://ejemplo.com/manuales/protocolo-descarga-autotanques.pdf";
-      } else if (title.includes("auditoria")) {
-        t.manualUrl = "https://ejemplo.com/manuales/checklist-auditoria-interna.pdf";
-      } else if (title.includes("inventario")) {
-        t.manualUrl = "https://ejemplo.com/manuales/formato-inventario-tienda.pdf";
-      } else {
-        t.manualUrl = "https://ejemplo.com/manuales/manual-operativo-gasolineras.pdf";
-      }
-    }
-
-    // Evidencia (foto / documento)
-    if (!t.evidenceUrl) {
-      if (title.includes("limpieza")) {
-        t.evidenceUrl = "https://ejemplo.com/fotos/limpieza-islas-las-torres.jpg";
-      } else if (title.includes("iluminacion") || title.includes("luminaria")) {
-        t.evidenceUrl = "https://ejemplo.com/fotos/revision-iluminacion-centro.jpg";
-      } else if (title.includes("cctv") || title.includes("camaras")) {
-        t.evidenceUrl = "https://ejemplo.com/fotos/monitoreo-cctv-aeropuerto.png";
-      } else if (title.includes("checklist") || title.includes("tarea diaria base")) {
-        t.evidenceUrl = "https://ejemplo.com/documentos/checklist-firmado-ejemplo.pdf";
-      } else {
-        t.evidenceUrl = "https://ejemplo.com/fotos/evidencia-general-estacion.jpg";
-      }
-    }
-
-    // Observaciones ejemplo
-    if (!t.notes) {
-      if (title.includes("apertura")) {
-        t.notes = "Checklist de apertura completado sin hallazgos criticos. Extintores y kits de derrames en orden.";
-      } else if (title.includes("ronda de seguridad")) {
-        t.notes = "Durante la ronda no se detectaron fugas ni derrames. Se sugieren mejoras de senalizacion.";
-      } else if (title.includes("inventario")) {
-        t.notes = "Inventario realizado con diferencia menor al 1%. Se programa ajuste para lubricantes.";
-      } else if (title.includes("auditoria")) {
-        t.notes = "Auditoria interna con 3 recomendaciones menores relacionadas con orden y limpieza.";
-      } else if (title.includes("limpieza")) {
-        t.notes = "Limpieza profunda de islas concluida. Se colocaron avisos de piso mojado hasta secado completo.";
-      } else {
-        t.notes = "Observaciones iniciales: tarea programada para validar condiciones generales de operacion en la estacion.";
-      }
-    }
-  });
-
-  state.employees = employees;
-  state.tasks = tasks;
-  state.lastTaskId = tasks.reduce((max, t) => Math.max(max, t.id || 0), 0);
+  // Inicializar sin empleados ni tareas demo; todo se capturará desde cero
+  state.employees = [];
+  state.tasks = [];
+  state.lastTaskId = 0;
 }
 
 function getInitials(name) {
@@ -1191,9 +688,10 @@ function renderDashboard() {
   const pending = tasksSource.filter((t) => t.status === STATUS.PENDING).length;
   const inProgress = tasksSource.filter((t) => t.status === STATUS.IN_PROGRESS).length;
   const done = tasksSource.filter((t) => t.status === STATUS.DONE).length;
-   const overdue = tasksSource.filter(
+  const overdue = tasksSource.filter(
     (t) => isTaskPastDue(t.dueDate) && t.status !== STATUS.DONE
   ).length;
+  const riskCount = tasksSource.filter((t) => isTaskAtRisk(t)).length;
 
   document.getElementById("stat-total-employees").textContent = String(totalEmployees);
   document.getElementById("stat-pending-tasks").textContent = String(pending);
@@ -1201,6 +699,8 @@ function renderDashboard() {
   document.getElementById("stat-completed-tasks").textContent = String(done);
   const overdueEl = document.getElementById("stat-overdue-tasks");
   if (overdueEl) overdueEl.textContent = String(overdue);
+  const riskEl = document.getElementById("stat-risk-tasks");
+  if (riskEl) riskEl.textContent = String(riskCount);
 
   // Actualizar resumen personal en topbar
   const myPendingEl = document.getElementById("topbar-my-pending");
@@ -1227,6 +727,74 @@ function renderDashboard() {
     const card = createEmployeeCard(emp);
     container.appendChild(card);
   });
+
+  const criticalContainer = document.getElementById("dashboard-critical-list");
+  if (criticalContainer) {
+    criticalContainer.innerHTML = "";
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const candidates = tasksSource.filter(
+      (t) => t.status !== STATUS.DONE
+    );
+
+    const critical = candidates.filter((t) => {
+      const cat = getTaskDueCategory(t);
+      const priority = (t.priority || "").toLowerCase();
+      const isHigh = priority === "alta";
+      const isOverdue = cat === "overdue";
+      const isToday = cat === "today";
+      const isTomorrowAndHigh = cat === "tomorrow" && isHigh;
+      return isOverdue || isToday || isTomorrowAndHigh || isHigh;
+    });
+
+    critical.sort((a, b) => {
+      const aDate = a.dueDate || todayStr;
+      const bDate = b.dueDate || todayStr;
+      if (aDate !== bDate) return aDate.localeCompare(bDate);
+      const aTime = a.dueTime || "23:59";
+      const bTime = b.dueTime || "23:59";
+      if (aTime !== bTime) return aTime.localeCompare(bTime);
+      const aHigh = (a.priority || "").toLowerCase() === "alta" ? 0 : 1;
+      const bHigh = (b.priority || "").toLowerCase() === "alta" ? 0 : 1;
+      return aHigh - bHigh;
+    });
+
+    const top = critical.slice(0, 4);
+
+    if (!top.length) {
+      criticalContainer.textContent =
+        "Sin tareas críticas registradas para tu equipo.";
+    } else {
+      top.forEach((task) => {
+        const item = document.createElement("div");
+        item.className = "admin-security-list-item";
+
+        const left = document.createElement("span");
+        const dueLabel = task.dueDate
+          ? formatDate(task.dueDate)
+          : "Sin fecha";
+        const timeLabel = task.dueTime || "";
+        left.textContent = timeLabel
+          ? `${dueLabel} · ${timeLabel}`
+          : dueLabel;
+
+        const right = document.createElement("span");
+        right.textContent = task.title || "Tarea";
+
+        const employee = state.employees.find(
+          (e) => e.id === task.employeeId
+        );
+        const empName = employee ? employee.name : "Operador";
+        right.title = timeLabel
+          ? `${empName} · ${dueLabel} ${timeLabel}`
+          : `${empName} · ${dueLabel}`;
+
+        item.appendChild(left);
+        item.appendChild(right);
+        criticalContainer.appendChild(item);
+      });
+    }
+  }
 
   if (employeeCalendar) {
     refreshEmployeeCalendarEvents();
@@ -1527,6 +1095,8 @@ function getTasksForExport() {
 
   const search = document.getElementById("tasks-search").value.trim().toLowerCase();
   const filterStatus = document.getElementById("filter-status").value;
+  const riskCheckbox = document.getElementById("filter-risk-only");
+  const riskOnly = riskCheckbox ? !!riskCheckbox.checked : false;
 
   let filtered = [...state.tasks];
   if (currentUser) {
@@ -1569,9 +1139,57 @@ function getTasksForExport() {
     });
   }
 
-  if (tasksTodayOnly) {
+  const dateRangeSelect = document.getElementById("filter-date-range");
+  const dateRange = dateRangeSelect ? dateRangeSelect.value : "";
+
+  // Guardar filtros actuales para futuras sesiones
+  try {
+    const filtersSnapshot = {
+      employeeId: selectEmployee ? selectEmployee.value : "",
+      station: selectStation ? selectStation.value : "",
+      status: filterStatus || "",
+      search,
+      dateRange,
+      riskOnly: !!riskOnly,
+      todayOnly: !!tasksTodayOnly,
+    };
+    window.localStorage.setItem(
+      TASK_FILTERS_KEY,
+      JSON.stringify(filtersSnapshot)
+    );
+  } catch (e) {
+    // silencioso
+  }
+
+  if (dateRange) {
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+
+    if (dateRange === "today") {
+      filtered = filtered.filter((t) => t.dueDate === todayStr);
+    } else if (dateRange === "7" || dateRange === "30") {
+      const limit = new Date(today);
+      limit.setDate(limit.getDate() + (dateRange === "7" ? 7 : 30));
+      const limitStr = limit.toISOString().slice(0, 10);
+      filtered = filtered.filter(
+        (t) =>
+          t.dueDate && t.dueDate >= todayStr && t.dueDate <= limitStr
+      );
+    } else if (dateRange === "overdue") {
+      filtered = filtered.filter(
+        (t) =>
+          t.dueDate &&
+          t.dueDate < todayStr &&
+          t.status !== STATUS.DONE
+      );
+    }
+  } else if (tasksTodayOnly) {
     const todayStr = new Date().toISOString().slice(0, 10);
     filtered = filtered.filter((t) => t.dueDate === todayStr);
+  }
+
+  if (riskOnly) {
+    filtered = filtered.filter((t) => isTaskAtRisk(t));
   }
 
   filtered.sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
@@ -1810,6 +1428,44 @@ function isTaskPastDue(iso) {
   return iso < todayStr;
 }
 
+function getTaskDueCategory(task) {
+  if (!task || !task.dueDate) return "no_date";
+  try {
+    const today = new Date();
+    const todayMid = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+      0,
+      0,
+      0,
+      0
+    );
+    const [y, m, d] = String(task.dueDate).split("-");
+    const due = new Date(Number(y), Number(m) - 1, Number(d), 0, 0, 0, 0);
+    const diffMs = due.getTime() - todayMid.getTime();
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) return "overdue";
+    if (diffDays === 0) return "today";
+    if (diffDays === 1) return "tomorrow";
+    return "future";
+  } catch (e) {
+    return "future";
+  }
+}
+
+function isTaskAtRisk(task) {
+  if (!task || task.status === STATUS.DONE) return false;
+  const cat = getTaskDueCategory(task);
+  const pr = (task.priority || "").toLowerCase();
+  const isHigh = pr === "alta";
+
+  if (cat === "overdue" || cat === "today") return true;
+  if (cat === "tomorrow" && isHigh) return true;
+  return false;
+}
+
 function createStatusBadge(status) {
   const span = document.createElement("span");
   const dot = document.createElement("span");
@@ -1937,6 +1593,8 @@ function renderTasksList() {
 
   const search = document.getElementById("tasks-search").value.trim().toLowerCase();
   const filterStatus = document.getElementById("filter-status").value;
+  const riskCheckbox = document.getElementById("filter-risk-only");
+  const riskOnly = riskCheckbox ? !!riskCheckbox.checked : false;
 
   let filtered = [...state.tasks];
   if (currentUser) {
@@ -1979,9 +1637,38 @@ function renderTasksList() {
     });
   }
 
-   if (tasksTodayOnly) {
+  const dateRangeSelect = document.getElementById("filter-date-range");
+  const dateRange = dateRangeSelect ? dateRangeSelect.value : "";
+
+  if (dateRange) {
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+
+    if (dateRange === "today") {
+      filtered = filtered.filter((t) => t.dueDate === todayStr);
+    } else if (dateRange === "7" || dateRange === "30") {
+      const limit = new Date(today);
+      limit.setDate(limit.getDate() + (dateRange === "7" ? 7 : 30));
+      const limitStr = limit.toISOString().slice(0, 10);
+      filtered = filtered.filter(
+        (t) =>
+          t.dueDate && t.dueDate >= todayStr && t.dueDate <= limitStr
+      );
+    } else if (dateRange === "overdue") {
+      filtered = filtered.filter(
+        (t) =>
+          t.dueDate &&
+          t.dueDate < todayStr &&
+          t.status !== STATUS.DONE
+      );
+    }
+  } else if (tasksTodayOnly) {
     const todayStr = new Date().toISOString().slice(0, 10);
     filtered = filtered.filter((t) => t.dueDate === todayStr);
+  }
+
+  if (riskOnly) {
+    filtered = filtered.filter((t) => isTaskAtRisk(t));
   }
 
   filtered.sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
@@ -2069,6 +1756,22 @@ function renderTasksList() {
       info.className = "task-checklist-progress";
       info.textContent = `${done}/${total} items (${percent}%)`;
       statusTd.appendChild(info);
+    }
+
+    if (t.notes && String(t.notes).trim().length) {
+      const notesBadge = document.createElement("span");
+      notesBadge.className = "badge-note";
+      notesBadge.textContent = "Obs";
+      notesBadge.title = String(t.notes).trim();
+      statusTd.appendChild(notesBadge);
+    }
+
+    if (t.evidenceUrl && String(t.evidenceUrl).trim().length) {
+      const evidenceBadge = document.createElement("span");
+      evidenceBadge.className = "badge-evidence";
+      evidenceBadge.textContent = "Evid.";
+      evidenceBadge.title = String(t.evidenceUrl).trim();
+      statusTd.appendChild(evidenceBadge);
     }
 
     const actionsTd = document.createElement("td");
@@ -2482,6 +2185,8 @@ function setupEvents() {
     "filter-employee",
     "filter-station",
     "filter-status",
+    "filter-date-range",
+    "filter-risk-only",
   ].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -2493,10 +2198,69 @@ function setupEvents() {
     el.addEventListener("change", debouncedRenderTasksList);
   });
 
+  // Restaurar filtros de lista de tareas desde última sesión
+  try {
+    const rawTaskFilters = window.localStorage.getItem(TASK_FILTERS_KEY);
+    if (rawTaskFilters) {
+      const f = JSON.parse(rawTaskFilters);
+      const searchInput = document.getElementById("tasks-search");
+      const empSelect = document.getElementById("filter-employee");
+      const stationSelect = document.getElementById("filter-station");
+      const statusSelect = document.getElementById("filter-status");
+      const dateRangeSelect = document.getElementById("filter-date-range");
+      const riskCheckbox = document.getElementById("filter-risk-only");
+
+      if (searchInput && f.search != null) searchInput.value = f.search;
+      if (empSelect && f.employeeId != null) empSelect.value = f.employeeId;
+      if (stationSelect && f.station != null) stationSelect.value = f.station;
+      if (statusSelect && f.status != null) statusSelect.value = f.status;
+      if (dateRangeSelect && f.dateRange != null)
+        dateRangeSelect.value = f.dateRange;
+      if (riskCheckbox && typeof f.riskOnly === "boolean") {
+        riskCheckbox.checked = f.riskOnly;
+      }
+
+      if (typeof f.todayOnly === "boolean") {
+        tasksTodayOnly = f.todayOnly;
+        if (btnTasksToday) {
+          if (tasksTodayOnly) btnTasksToday.classList.add("is-active");
+          else btnTasksToday.classList.remove("is-active");
+        }
+      }
+    }
+  } catch (e) {
+    // silencioso
+  }
+
   const btnTasksToday = document.getElementById("btn-tasks-today");
   const btnTasksExport = document.getElementById("btn-tasks-export");
   const tasksPrevBtn = document.getElementById("tasks-page-prev");
   const tasksNextBtn = document.getElementById("tasks-page-next");
+
+  const btnTasksClear = document.getElementById("btn-tasks-clear");
+  if (btnTasksClear) {
+    btnTasksClear.addEventListener("click", () => {
+      const searchInput = document.getElementById("tasks-search");
+      const empSelect = document.getElementById("filter-employee");
+      const stationSelect = document.getElementById("filter-station");
+      const statusSelect = document.getElementById("filter-status");
+      const dateRangeSelect = document.getElementById("filter-date-range");
+      const riskCheckbox = document.getElementById("filter-risk-only");
+
+      if (searchInput) searchInput.value = "";
+      if (empSelect) empSelect.value = "";
+      if (stationSelect) stationSelect.value = "";
+      if (statusSelect) statusSelect.value = "";
+      if (dateRangeSelect) dateRangeSelect.value = "";
+      if (riskCheckbox) riskCheckbox.checked = false;
+
+      tasksTodayOnly = false;
+      if (btnTasksToday) btnTasksToday.classList.remove("is-active");
+
+      tasksPage = 1;
+      renderTasksList();
+    });
+  }
 
   if (btnTasksToday) {
     btnTasksToday.addEventListener("click", () => {
@@ -2519,6 +2283,15 @@ function setupEvents() {
         tasksPage -= 1;
         renderTasksList();
       }
+    });
+  }
+
+  const btnDashboardCriticalViewTasks = document.getElementById(
+    "btn-dashboard-critical-view-tasks"
+  );
+  if (btnDashboardCriticalViewTasks) {
+    btnDashboardCriticalViewTasks.addEventListener("click", () => {
+      setView("view-tasks");
     });
   }
 
@@ -2700,6 +2473,16 @@ function setupEvents() {
       const phone = document.getElementById("emp-profile-phone").value.trim();
       const photoUrl = document.getElementById("emp-profile-photo").value.trim();
 
+      const currentPass = document
+        .getElementById("emp-profile-current-password")
+        ?.value.trim() || "";
+      const newPass = document
+        .getElementById("emp-profile-new-password")
+        ?.value.trim() || "";
+      const confirmPass = document
+        .getElementById("emp-profile-new-password-confirm")
+        ?.value.trim() || "";
+
       const nameToUse = fullName || currentUser.name;
 
       let updatedUsers = adminData.users.slice();
@@ -2730,6 +2513,83 @@ function setupEvents() {
       target.phone = phone;
       target.photoUrl = photoUrl;
 
+      // Manejo de cambio de contraseña (opcional)
+      if (newPass || confirmPass || currentPass) {
+        // Validar todos los campos si se intenta cambiar contraseña
+        if (!currentPass || !newPass || !confirmPass) {
+          showToast("Para cambiar la contraseña completa los tres campos.", "warning");
+          return;
+        }
+
+        if (user && user.password && user.password !== currentPass) {
+          showToast("La contraseña actual no es correcta.", "error");
+          return;
+        }
+
+        if (newPass !== confirmPass) {
+          showToast("La confirmación no coincide con la nueva contraseña.", "error");
+          return;
+        }
+
+        if (newPass === currentPass) {
+          showToast(
+            "La nueva contraseña debe ser diferente a la actual.",
+            "warning"
+          );
+          return;
+        }
+
+        if (newPass.length < 8) {
+          showToast(
+            "La nueva contraseña debe tener al menos 8 caracteres.",
+            "warning"
+          );
+          return;
+        }
+
+        if (!/[A-Z]/.test(newPass)) {
+          showToast(
+            "La nueva contraseña debe incluir al menos una letra mayúscula.",
+            "warning"
+          );
+          return;
+        }
+
+        if (!/[a-z]/.test(newPass)) {
+          showToast(
+            "La nueva contraseña debe incluir al menos una letra minúscula.",
+            "warning"
+          );
+          return;
+        }
+
+        if (!/[0-9]/.test(newPass)) {
+          showToast(
+            "La nueva contraseña debe incluir al menos un número.",
+            "warning"
+          );
+          return;
+        }
+
+        const todayIso = new Date().toISOString().slice(0, 10);
+
+        // Usuarios administradores pueden cambiar su contraseña directamente
+        if (currentUser.role === "admin") {
+          target.password = newPass;
+          target.passwordLastChanged = todayIso;
+        } else {
+          // Para otros roles, registrar una solicitud de cambio para aprobación de un administrador
+          target.pendingPassword = newPass;
+          target.pendingPasswordRequestedAt = todayIso;
+          target.pendingPasswordStatus = "pendiente";
+
+          showToast(
+            "Solicitud de cambio de contraseña enviada. Un administrador debe aprobarla.",
+            "success"
+          );
+        }
+      }
+
       const newAdminData = {
         stations: adminData.stations,
         logs: adminData.logs,
@@ -2741,6 +2601,18 @@ function setupEvents() {
         ADMIN_STORAGE_KEY,
         JSON.stringify(newAdminData)
       );
+
+      // Limpiar campos de contraseña después de guardar
+      try {
+        const c = document.getElementById("emp-profile-current-password");
+        const n = document.getElementById("emp-profile-new-password");
+        const f = document.getElementById("emp-profile-new-password-confirm");
+        if (c) c.value = "";
+        if (n) n.value = "";
+        if (f) f.value = "";
+      } catch (e) {
+        console.warn("No se pudieron limpiar los campos de contraseña en Mi perfil", e);
+      }
 
       currentUser.name = nameToUse;
       currentUser.area = area || currentUser.area;
@@ -3078,6 +2950,7 @@ window.addEventListener("DOMContentLoaded", () => {
     applySavedTheme();
     setupThemeToggleMain();
     setupCrossTabLogoutMain();
+    updateOperationsLastSyncLabel();
     await syncOperationsStateFromBackendIfAvailable();
     loadState();
     setupEvents();

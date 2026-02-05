@@ -75,3 +75,73 @@ Sustituye `TU_IP_LOCAL` por la IP real (por ejemplo `192.168.1.72`).
 
 - Los datos se guardan en los archivos JSON dentro de la carpeta `backend` (por ejemplo `admin-data.json`, `operations-data.json`, `users.json`).
 - Si `node generate-history.js` no se ejecuta, el sistema seguirá funcionando, pero con menos datos de ejemplo.
+
+---
+
+## Guía rápida por rol (uso diario)
+
+### Administrador
+
+- [ ] Iniciar sesión con usuario de administrador.
+- [ ] Ir a "Usuarios" y:
+   - [ ] Crear usuarios reales (rol, estación, área, contraseña).
+   - [ ] Probar filtro por búsqueda y rol.
+   - [ ] Probar "Resetear contraseña seleccionada".
+- [ ] Ir a "Estaciones" y:
+   - [ ] Registrar todas las estaciones activas.
+   - [ ] Verificar que aparezcan en formularios (logs, tareas, reportes).
+- [ ] Ir a "Reporte mensual" y:
+   - [ ] Seleccionar estación y mes de prueba.
+   - [ ] Revisar tarjetas de totales e incidentes.
+   - [ ] Exportar CSV y revisar secciones (general, pipas, usuarios, estaciones).
+- [ ] Ir a "Mi perfil" y:
+   - [ ] Actualizar datos personales (correo, teléfono, foto).
+   - [ ] Cambiar contraseña y confirmar que ya no aparece aviso de caducidad.
+
+### Jefe de estación
+
+- [ ] Iniciar sesión con rol "Jefe de estación".
+- [ ] En panel operativo:
+   - [ ] Revisar "Inicio" (resumen de tareas y calendario).
+   - [ ] Ir a "Mi equipo" y confirmar que ve solo su gente.
+   - [ ] Asignar una tarea de prueba a un operador.
+- [ ] En "Lista de tareas":
+   - [ ] Probar filtros: operador, estación, estado.
+   - [ ] Probar rango de fecha ("Solo hoy", "Próximos 7 días", "Solo atrasadas").
+   - [ ] Reasignar una tarea a otro operador.
+   - [ ] Exportar CSV y revisar contenido.
+- [ ] En panel admin (si tiene acceso):
+   - [ ] Revisar logs y alertas de su estación.
+
+### Auditor
+
+- [ ] Iniciar sesión con rol "Auditor".
+- [ ] En dashboard admin:
+   - [ ] Revisar tarjetas de estado e incidentes.
+   - [ ] Navegar a "Bitácora" y confirmar que no puede crear/editar ni exportar.
+- [ ] En "Alertas":
+   - [ ] Probar filtros (estación, severidad, fechas, enviados).
+   - [ ] Identificar incidentes críticos.
+- [ ] En "Reporte mensual":
+   - [ ] Cambiar mes/estación y revisar tendencias.
+   - [ ] (Opcional) Pedir al administrador la exportación de CSV si requiere evidencia.
+- [ ] En "Bitácora general":
+   - [ ] Buscar por usuario/actividad (ej. cambios de contraseña, resets).
+
+### Operador (Empleado)
+
+- [ ] Iniciar sesión con rol "Empleado".
+- [ ] En "Inicio":
+   - [ ] Ver tarjetas de tareas (pendientes, en progreso, atrasadas).
+   - [ ] Identificar tareas del día.
+- [ ] En "Mi día":
+   - [ ] Revisar lista de tareas de hoy.
+   - [ ] Abrir una tarea, leer el resumen y el checklist.
+   - [ ] Registrar observaciones y, si aplica, evidencia.
+   - [ ] Cambiar estado de la tarea (Pendiente → En progreso → Completada).
+- [ ] En "Lista de tareas":
+   - [ ] Confirmar que solo ve sus tareas (si aplica).
+   - [ ] Usar el buscador para encontrar una tarea específica.
+- [ ] En "Mi perfil":
+   - [ ] Actualizar datos básicos (teléfono, correo, foto).
+   - [ ] Verificar que su nombre coincide con el de las tareas asignadas.

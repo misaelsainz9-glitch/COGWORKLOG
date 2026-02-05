@@ -1,16 +1,31 @@
 const ADMIN_STORAGE_KEY = "cog-work-log-admin";
 const THEME_STORAGE_KEY = "cog-work-log-theme";
+const LOGIN_ATTEMPTS_KEY = "cog-work-log-login-attempts";
 // Configuración opcional de backend para administración
 // Usamos misma origen (Render o servidor local que sirve los estáticos y la API)
 const BACKEND_URL = "";
 const BACKEND_ADMIN_ENABLED = true;
 // Versión de esquema de datos de administración para poder regenerar seeds cuando cambian
 // Incrementa este valor cuando cambies usuarios/estructura semilla
-const ADMIN_DATA_VERSION = 8;
+const ADMIN_DATA_VERSION = 11;
 const LOG_FILTERS_KEY = "cog-work-log-admin-log-filters";
 const REPORT_FILTERS_KEY = "cog-work-log-admin-report-filters";
-const LOG_SAVED_VIEWS_KEY = "cog-work-log-admin-log-saved-views";
+const ALERT_FILTERS_KEY = "cog-work-log-admin-alert-filters";
 const OPERATIONS_STORAGE_KEY = "cog-work-log-data";
+const ADMIN_LAST_SYNC_KEY = "cog-work-log-admin-last-sync";
+
+const DEFAULT_SECURITY_SETTINGS = {
+  maxFailedAttempts: 5,
+  lockWindowMinutes: 10,
+  passwordExpiryDays: 90,
+};
+
+const DEFAULT_ALERT_SETTINGS = {
+  enableCriticalAlerts: true,
+  enableStationBurstAlerts: true,
+  stationBurstThreshold: 3,
+  stationBurstWindowMinutes: 60,
+};
 
 let adminState = {
   version: ADMIN_DATA_VERSION,
@@ -19,363 +34,16 @@ let adminState = {
   generalLogs: [],
   users: [],
   shifts: [],
+  securitySettings: { ...DEFAULT_SECURITY_SETTINGS },
+  alertSettings: { ...DEFAULT_ALERT_SETTINGS },
+  alerts: [],
+  maintenance: [],
 };
 
-let currentUser = null;
-let assignedStationId = "";
-let dashboardStationId = "";
-let adminCalendar = null;
-let currentCommentsLogId = null;
-let statusChart = null;
-let frequencyChart = null;
-let fuelTypeTodayChart = null;
-let fuelTypeMonthChart = null;
-let quickFilterOverdue = false;
-let quickFilterIncidents = false;
-let quickFilterLast7 = false;
-let quickFilterNoFollowUp = false;
-let quickFilterFuelDeliveries = false;
-let quickFilterEvidence = false;
-let quickFilterSentToAdmin = false;
-let quickFilterHighSeverity = false;
-let quickFilterEvidencePending = false;
-
-// Plugins de Chart.js para mejorar calidad visual de las gráficas del panel
-var dashboardDoughnutCenter = {
-  id: "dashboardDoughnutCenter",
-  afterDraw: function (chart, args, options) {
-    if (!chart || !chart.ctx) return;
-    var ctx = chart.ctx;
-    var width = chart.width;
-    var height = chart.height;
-
-    var ds = chart.data && chart.data.datasets && chart.data.datasets[0];
-    if (!ds || !ds.data) return;
-
-    var dataArr = ds.data;
-    var total = 0;
-    for (var i = 0; i < dataArr.length; i++) {
-      var v = dataArr[i];
-      total += typeof v === "number" ? v : 0;
-    }
-
-    var label = options && options.label ? options.label : "Total";
-    var color = options && options.color ? options.color : "#0f172a";
-    var fontSize = options && options.fontSize ? options.fontSize : 14;
-
-    ctx.save();
-    ctx.font =
-      "600 " +
-      fontSize +
-      "px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-    ctx.fillStyle = color;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(total, width / 2, height / 2 - 4);
-
-    ctx.font =
-      "500 " +
-      (fontSize - 2) +
-      "px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-    ctx.globalAlpha = 0.8;
-    ctx.fillText(label, width / 2, height / 2 + 14);
-    ctx.restore();
-  },
-};
-
-var dashboardBarLabels = {
-  id: "dashboardBarLabels",
-  afterDatasetsDraw: function (chart, args, options) {
-    if (!chart || !chart.ctx) return;
-    var ctx = chart.ctx;
-    var ds = chart.data && chart.data.datasets && chart.data.datasets[0];
-    if (!ds || !ds.data) return;
-    var meta = chart.getDatasetMeta(0);
-    if (!meta || !meta.data) return;
-
-    var color = options && options.color ? options.color : "#0f172a";
-    var fontSize = options && options.fontSize ? options.fontSize : 10;
-    var offsetY =
-      options && typeof options.offsetY === "number" ? options.offsetY : -4;
-
-    ctx.save();
-    ctx.font =
-      "500 " +
-      fontSize +
-      "px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-    ctx.fillStyle = color;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-
-    for (var i = 0; i < meta.data.length; i++) {
-      var element = meta.data[i];
-      if (!element) continue;
-      var value = ds.data[i];
-      if (!value) continue;
-
-      var pos = element.tooltipPosition();
-      ctx.fillText(value, pos.x, pos.y + offsetY);
-    }
-
-    ctx.restore();
-  },
-};
-
-  function getFuelColorForType(type) {
-    const lower = (type || "").toString().toLowerCase();
-    if (lower.indexOf("magna") !== -1 || lower.indexOf("verde") !== -1) {
-      return "#16a34a"; // verde
-    }
-    if (lower.indexOf("premium") !== -1 || lower.indexOf("roja") !== -1) {
-      return "#dc2626"; // rojo
-    }
-    if (lower.indexOf("diésel") !== -1 || lower.indexOf("diesel") !== -1) {
-      return "#111827"; // negro
-    }
-    return "#6b7280"; // gris para otros
-  }
-
-let lastApprovedLogId = null;
-let lastCommentedLogId = null;
-
-let logPage = 1;
-const LOG_PAGE_SIZE = 15;
-
-let usersPage = 1;
-const USERS_PAGE_SIZE = 10;
-
-let alertsPage = 1;
-const ALERTS_PAGE_SIZE = 20;
-
-let generalPage = 1;
-const GENERAL_PAGE_SIZE = 20;
-
-const ROLE_PERMISSIONS = {
-  admin: {
-    createLog: true,
-    manageStations: true,
-    manageUsers: true,
-    manageShifts: true,
-    exportLogs: true,
-    printLogs: true,
-    commentLogs: true,
-  },
-  auditor: {
-    createLog: false,
-    manageStations: false,
-    manageUsers: false,
-    manageShifts: false,
-    exportLogs: false,
-    printLogs: false,
-    commentLogs: false,
-  },
-  supervisor: {
-    createLog: true,
-    manageStations: true,
-    manageUsers: false,
-    manageShifts: true,
-    exportLogs: true,
-    printLogs: true,
-    commentLogs: true,
-  },
-  jefe_estacion: {
-    createLog: true,
-    manageStations: false,
-    manageUsers: false,
-    manageShifts: true,
-    exportLogs: true,
-    printLogs: true,
-    commentLogs: true,
-  },
-  empleado: {
-    createLog: false,
-    manageStations: false,
-    manageUsers: false,
-    manageShifts: false,
-    exportLogs: false,
-    printLogs: false,
-    commentLogs: false,
-  },
-};
-
-const ADMIN_IDLE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutos
-let adminIdleTimeoutHandle = null;
-
-function can(permission) {
-  if (!currentUser) return false;
-  const defs = ROLE_PERMISSIONS[currentUser.role] || {};
-  return !!defs[permission];
-}
-
-function showToast(message, type = "success") {
-  const container = document.getElementById("toast-container");
-  if (!container) return;
-
-  const toast = document.createElement("div");
-  toast.className = "toast";
-  if (type === "error") toast.classList.add("toast-error");
-  else if (type === "warning") toast.classList.add("toast-warning");
-  else toast.classList.add("toast-success");
-
-  toast.textContent = message;
-  container.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translateY(4px)";
-  }, 2200);
-
-  setTimeout(() => {
-    toast.remove();
-  }, 2700);
-}
-
-function resetAdminIdleTimer() {
-  if (adminIdleTimeoutHandle) {
-    clearTimeout(adminIdleTimeoutHandle);
-  }
-  adminIdleTimeoutHandle = setTimeout(() => {
-    try {
-      const user = currentUser || getCurrentUser();
-      addGeneralLogEntry(
-        "Cierre de sesión por inactividad",
-        "Sesión cerrada automáticamente en panel administración tras inactividad.",
-        "ok"
-      );
-    } catch (e) {
-      console.error("No se pudo registrar cierre por inactividad (admin)", e);
-    }
-
-    if (typeof clearAuth === "function") {
-      clearAuth();
-    }
-    window.location.href = "login.html";
-  }, ADMIN_IDLE_TIMEOUT_MS);
-}
-
-function addGeneralLogEntry(activity, description, status = "ok") {
-  try {
-    const generalLogs = Array.isArray(adminState.generalLogs)
-      ? adminState.generalLogs
-      : [];
-
-    const nextId =
-      generalLogs.reduce((max, l) => Math.max(max, l.id || 0), 0) + 1;
-    const now = new Date();
-    const date = now.toISOString().slice(0, 10);
-    const time = now.toTimeString().slice(0, 5);
-
-    const name = currentUser && currentUser.name ? currentUser.name : "Sistema";
-    const role = currentUser && currentUser.role ? currentUser.role : "sistema";
-    const username =
-      currentUser && currentUser.username ? currentUser.username : "";
-
-    generalLogs.push({
-      id: nextId,
-      user: name,
-      role,
-      activity,
-      description,
-      date,
-      time,
-      status,
-      username,
-    });
-
-    adminState.generalLogs = generalLogs;
-    saveAdminState();
-  } catch (err) {
-    console.error("No se pudo registrar en bitácora general", err);
-  }
-}
-
-// Sincronizar adminState con el backend si está disponible
-async function syncAdminStateFromBackendIfAvailable() {
-  if (!BACKEND_ADMIN_ENABLED || typeof fetch === "undefined") {
-    return;
-  }
-
-  try {
-    const resp = await fetch(BACKEND_URL + "/api/admin-state");
-    let data = null;
-    try {
-      data = await resp.json();
-    } catch (e) {
-      data = null;
-    }
-
-    if (!resp.ok || !data || data.ok === false || !data.state) {
-      return;
-    }
-
-    const backendState = data.state || {};
-    adminState = {
-      version:
-        typeof backendState.version === "number"
-          ? backendState.version
-          : ADMIN_DATA_VERSION,
-      stations: Array.isArray(backendState.stations)
-        ? backendState.stations
-        : [],
-      logs: Array.isArray(backendState.logs) ? backendState.logs : [],
-      generalLogs: Array.isArray(backendState.generalLogs)
-        ? backendState.generalLogs
-        : [],
-      users: Array.isArray(backendState.users) ? backendState.users : [],
-      shifts: Array.isArray(backendState.shifts) ? backendState.shifts : [],
-    };
-
-    // Persistir también en localStorage para que el resto del flujo siga igual
-    saveAdminState();
-  } catch (e) {
-    console.warn("No se pudo sincronizar admin-state desde backend", e);
-  }
-}
-
-// Enviar estado de administración al backend si está disponible (best-effort)
-async function syncAdminStateToBackendIfAvailable() {
-  if (!BACKEND_ADMIN_ENABLED || typeof fetch === "undefined") {
-    return;
-  }
-
-  try {
-    await fetch(BACKEND_URL + "/api/admin-state", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ state: adminState }),
-    });
-  } catch (e) {
-    console.warn("No se pudo enviar admin-state al backend", e);
-  }
-}
-
-function loadAdminState() {
-  const raw = window.localStorage.getItem(ADMIN_STORAGE_KEY);
-  if (!raw) {
-    seedAdminState();
-    saveAdminState();
-    return;
-  }
-  try {
-    const parsed = JSON.parse(raw);
-
-    const storedVersion = parsed && typeof parsed.version === "number" ? parsed.version : 1;
-
-    // Si la versión guardada es antigua, regenerar completamente los datos demo de administración
-    if (!parsed || storedVersion < ADMIN_DATA_VERSION) {
-      seedAdminState();
-      saveAdminState();
-    } else {
-      adminState = { ...adminState, ...parsed };
-    }
-  } catch (e) {
-    console.error("No se pudo leer datos de administración, se cargan valores por defecto", e);
-    seedAdminState();
-    saveAdminState();
-  }
-}
+// Estado auxiliar para vistas de estaciones / globo
+let stationsHighlightId = ""; // estación a resaltar al abrir la vista de estaciones
+let stationsEditingId = ""; // estación actualmente en edición desde el formulario
+let pendingLogStationFilterId = ""; // filtro de estación a aplicar al abrir la vista de bitácora desde el globo
 
 function saveAdminState() {
   window.localStorage.setItem(
@@ -387,6 +55,13 @@ function saveAdminState() {
       generalLogs: adminState.generalLogs,
       users: adminState.users,
       shifts: adminState.shifts,
+      securitySettings:
+        adminState.securitySettings || { ...DEFAULT_SECURITY_SETTINGS },
+      alertSettings: adminState.alertSettings || { ...DEFAULT_ALERT_SETTINGS },
+      alerts: Array.isArray(adminState.alerts) ? adminState.alerts : [],
+      maintenance: Array.isArray(adminState.maintenance)
+        ? adminState.maintenance
+        : [],
     })
   );
 
@@ -394,946 +69,237 @@ function saveAdminState() {
   syncAdminStateToBackendIfAvailable();
 }
 
+// Datos semilla mínimos: sin estaciones ni bitácoras demo, solo el usuario inicial
 function seedAdminState() {
+  const todayIso = new Date().toISOString().slice(0, 10);
+
   adminState.version = ADMIN_DATA_VERSION;
-  adminState.stations = [
-    {
-      id: "st1",
-      name: "Gasolinera Las Torres",
-      location: "Monterrey, N.L.",
-      description: "Gasolinera urbana · Operación 24h · Zona norte",
-      employees: [
-        { name: "Encargado Las Torres", role: "Encargado · Jefe de estación" },
-        { name: "Operador Torres 1", role: "Operador · Área Operación" },
-        { name: "Operador Torres 2", role: "Operador · Área Operación" },
-        { name: "Operador Torres 3", role: "Operador · Área Operación" },
-      ],
-    },
-    {
-      id: "st2",
-      name: "Gasolinera Cumbres",
-      location: "Monterrey, N.L.",
-      description: "Gasolinera urbana · Zona poniente",
-      employees: [
-        { name: "Encargado Cumbres", role: "Encargado · Jefe de estación" },
-        { name: "Operador Cumbres 1", role: "Operador · Área Operación" },
-        { name: "Operador Cumbres 2", role: "Operador · Área Operación" },
-        { name: "Operador Cumbres 3", role: "Operador · Área Operación" },
-      ],
-    },
-    {
-      id: "st3",
-      name: "Gasolinera Centro",
-      location: "Monterrey, N.L.",
-      description: "Gasolinera urbana · Zona centro",
-      employees: [
-        { name: "Encargado Centro", role: "Encargado · Jefe de estación" },
-        { name: "Operador Centro 1", role: "Operador · Área Operación" },
-        { name: "Operador Centro 2", role: "Operador · Área Operación" },
-        { name: "Operador Centro 3", role: "Operador · Área Operación" },
-      ],
-    },
-    {
-      id: "st4",
-      name: "Gasolinera Aeropuerto",
-      location: "Apodaca, N.L.",
-      description: "Gasolinera de alto flujo · Zona aeropuerto",
-      employees: [
-        { name: "Encargado Aeropuerto", role: "Encargado · Jefe de estación" },
-        { name: "Operador Aeropuerto 1", role: "Operador · Área Operación" },
-        { name: "Operador Aeropuerto 2", role: "Operador · Área Operación" },
-        { name: "Operador Aeropuerto 3", role: "Operador · Área Operación" },
-      ],
-    },
-    {
-      id: "st5",
-      name: "Gasolinera Valle Oriente",
-      location: "San Pedro, N.L.",
-      description: "Gasolinera corporativa · Zona financiera",
-      employees: [
-        { name: "Encargado Valle", role: "Encargado · Jefe de estación" },
-        { name: "Operador Valle 1", role: "Operador · Área Operación" },
-        { name: "Operador Valle 2", role: "Operador · Área Operación" },
-        { name: "Operador Valle 3", role: "Operador · Área Operación" },
-      ],
-    },
-  ];
+  adminState.stations = [];
+  adminState.logs = [];
+  adminState.generalLogs = [];
 
-  const today = new Date();
-  const todayIso = today.toISOString().slice(0, 10);
-  const isoOffset = (days) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
-  };
-
-  adminState.logs = [
-    {
-      id: 1,
-      stationId: "st1",
-      user: "Luis Ramirez",
-      entry: "Entrada turno matutino",
-      description: "Revisión general sin novedades.",
-      date: todayIso,
-      time: "07:00",
-      status: "ok",
-      frequency: "diaria",
-      shift: "matutino",
-      incidentType: "Ronda de arranque",
-      severity: "baja",
-    },
-    {
-      id: 2,
-      stationId: "st1",
-      user: "Ana López",
-      entry: "Check list de apertura",
-      description: "Extintores y kits de derrame verificados.",
-      date: todayIso,
-      time: "06:40",
-      status: "ok",
-      frequency: "diaria",
-      shift: "matutino",
-      incidentType: "Checklist apertura",
-      severity: "baja",
-    },
-    {
-      id: 3,
-      stationId: "st2",
-      user: "José Herrera",
-      entry: "Ronda de seguridad",
-      description: "Se detecta luminaria apagada en zona de descarga.",
-      date: isoOffset(-1),
-      time: "21:30",
-      status: "error",
-      frequency: "diaria",
-      shift: "nocturno",
-      incidentType: "Falla de luminaria",
-      severity: "alta",
-      approvalStatus: "pendiente",
-      comments: [
-        "Incidente detectado en ronda nocturna.",
-        "Pendiente cambio de luminaria.",
-      ],
-    },
-    {
-      id: 4,
-      stationId: "st2",
-      user: "Carlos Pérez",
-      entry: "Seguimiento incidente",
-      description: "Se programa cambio de luminaria defectuosa.",
-      date: todayIso,
-      time: "10:15",
-      status: "warning",
-      frequency: "unica",
-      shift: "matutino",
-      incidentType: "Seguimiento incidente",
-      severity: "media",
-      comments: ["Orden de trabajo enviada a mantenimiento."],
-    },
-    {
-      id: 5,
-      stationId: "st1",
-      user: "Patricia Mendoza",
-      entry: "Cierre turno matutino",
-      description:
-        "Turno sin incidentes. Se deja pendiente verificación de inventario tienda.",
-      date: todayIso,
-      time: "15:05",
-      status: "ok",
-      frequency: "diaria",
-      shift: "matutino",
-      incidentType: "Cierre de turno",
-      severity: "baja",
-      comments: [
-        "Inventario de tienda programado para turno vespertino.",
-      ],
-    },
-    {
-      id: 6,
-      stationId: "st1",
-      user: "María González",
-      entry: "Incidente menor en isla 2",
-      description:
-        "Se detecta pequeño derrame de combustible, se atiende con kit de derrames.",
-      date: isoOffset(-1),
-      time: "12:20",
-      status: "warning",
-      frequency: "unica",
-      shift: "vespertino",
-      incidentType: "Derrame menor",
-      severity: "media",
-      comments: [
-        "No hubo contacto con cliente.",
-        "Área acordonada y limpiada de inmediato.",
-      ],
-    },
-    {
-      id: 7,
-      stationId: "st2",
-      user: "Miguel Torres",
-      entry: "Revisión semanal de extintores",
-      description:
-        "Extintores dentro de rango, se detecta uno cercano a fecha de recarga.",
-      date: isoOffset(-2),
-      time: "09:10",
-      status: "warning",
-      frequency: "semanal",
-      shift: "matutino",
-      incidentType: "Revisión de extintores",
-      severity: "media",
-      comments: ["Programar recarga antes de fin de mes."],
-    },
-    {
-      id: 8,
-      stationId: "st1",
-      user: "Laura Sánchez",
-      entry: "Auditoría interna de checklist",
-      description:
-        "Checklist críticos completos en 95%. Se detectan 2 pendientes sin impacto.",
-      date: isoOffset(-3),
-      time: "16:45",
-      status: "ok",
-      frequency: "mensual",
-      shift: "vespertino",
-      incidentType: "Auditoría interna",
-      severity: "baja",
-    },
-    {
-      id: 9,
-      stationId: "st2",
-      user: "Carlos Pérez",
-      entry: "Incidente crítico en descarga",
-      description:
-        "Se detecta fuga moderada en manguera de descarga, se activa protocolo.",
-      date: todayIso,
-      time: "05:30",
-      status: "error",
-      frequency: "unica",
-      shift: "nocturno",
-      incidentType: "Fuga en descarga",
-      severity: "alta",
-      approvalStatus: "pendiente",
-      comments: [
-        "Se detiene descarga y se aísla zona.",
-        "Se notifica a proveedor y se documenta evidencia.",
-      ],
-    },
-    {
-      id: 10,
-      stationId: "st1",
-      user: "Jefe Estación Las Torres",
-      entry: "Revisión de incidentes del día",
-      description:
-        "Se revisan incidentes y se asignan responsables de seguimiento.",
-      date: todayIso,
-      time: "18:10",
-      status: "ok",
-      frequency: "diaria",
-      shift: "vespertino",
-      incidentType: "Revisión diaria de incidentes",
-      severity: "baja",
-    },
-    {
-      id: 11,
-      stationId: "st2",
-      user: "Auditor Seguridad",
-      entry: "Visita de auditoría sorpresa",
-      description:
-        "Se realiza auditoría express, se levantan 3 recomendaciones menores.",
-      date: isoOffset(-1),
-      time: "11:40",
-      status: "warning",
-      frequency: "unica",
-      shift: "matutino",
-      incidentType: "Auditoría externa",
-      severity: "media",
-      comments: [
-        "Actualizar señalización en área de descarga.",
-        "Mejorar iluminación de pasillo lateral.",
-      ],
-    },
-    {
-      id: 12,
-      stationId: "st1",
-      user: "Luis Ramirez",
-      entry: "Cierre turno nocturno",
-      description:
-        "Se deja estación en orden. Se reporta pendiente de limpieza ligera.",
-      date: isoOffset(-1),
-      time: "23:55",
-      status: "ok",
-      frequency: "diaria",
-      shift: "nocturno",
-      incidentType: "Cierre de turno",
-      severity: "baja",
-    },
-    {
-      id: 13,
-      stationId: "st1",
-      user: "Jefe Estación Las Torres",
-      entry: "Asignación de checklist de apertura",
-      description:
-        "Se asigna checklist de apertura a Luis Ramirez y Ana López para el turno matutino.",
-      date: todayIso,
-      time: "05:50",
-      status: "ok",
-      frequency: "diaria",
-      shift: "matutino",
-      incidentType: "Asignación de actividades",
-      severity: "baja",
-      comments: [
-        "Responsables: Luis Ramirez (bomba), Ana López (isla).",
-      ],
-    },
-    {
-      id: 14,
-      stationId: "st1",
-      user: "Jefe Área Operación",
-      entry: "Asignación de simulacro interno",
-      description:
-        "Se programa simulacro corto de fuga controlada y se asigna a Miguel Torres como líder.",
-      date: isoOffset(2),
-      time: "10:00",
-      status: "ok",
-      frequency: "mensual",
-      shift: "matutino",
-      incidentType: "Plan de simulacros",
-      severity: "media",
-      comments: [
-        "Participan: personal de operación y seguridad de ambas estaciones.",
-      ],
-    },
-    {
-      id: 15,
-      stationId: "st2",
-      user: "Jefe Área Seguridad",
-      entry: "Seguimiento a incidentes de derrame",
-      description:
-        "Se revisan incidentes de derrame y se asigna capacitación express a personal de islas.",
-      date: todayIso,
-      time: "14:30",
-      status: "warning",
-      frequency: "mensual",
-      shift: "vespertino",
-      incidentType: "Seguimiento de incidentes",
-      severity: "media",
-      comments: [
-        "Capacitación asignada a: María González y Operadores Cumbres.",
-      ],
-    },
-    {
-      id: 16,
-      stationId: "st2",
-      user: "Operador Cumbres 1",
-      entry: "Ejecución de checklist de descarga",
-      description:
-        "Se completa checklist de descarga de autotanque asignado por Jefe Área Seguridad.",
-      date: todayIso,
-      time: "09:20",
-      status: "ok",
-      frequency: "unica",
-      shift: "matutino",
-      incidentType: "Checklist de descarga",
-      severity: "baja",
-      comments: [
-        "Responsable de supervisión: Miguel Torres (Supervisor de seguridad).",
-      ],
-    },
-    {
-      id: 17,
-      stationId: "st1",
-      user: "Coordinador Calidad",
-      entry: "Plan de acción de calidad",
-      description:
-        "Se asignan acciones de mejora a auxiliares administrativos y personal de pista.",
-      date: isoOffset(-2),
-      time: "13:15",
-      status: "ok",
-      frequency: "mensual",
-      shift: "vespertino",
-      incidentType: "Plan de calidad",
-      severity: "baja",
-      comments: [
-        "Acciones asignadas a Verónica Ortiz y Luis Ramirez.",
-      ],
-    },
-    {
-      id: 18,
-      stationId: "st2",
-      user: "Jefe Estación Las Torres",
-      entry: "Intercambio de mejores prácticas",
-      description:
-        "Jefe de Estación Las Torres comparte mejores prácticas y asigna revisión cruzada a Jefe Área Seguridad.",
-      date: isoOffset(-1),
-      time: "17:50",
-      status: "ok",
-      frequency: "unica",
-      shift: "vespertino",
-      incidentType: "Mejores prácticas",
-      severity: "baja",
-      comments: [
-        "Se asigna revisión de procedimientos a Jefe Área Seguridad.",
-      ],
-    },
-    {
-      id: 19,
-      stationId: "st1",
-      user: "Jefe Área Operación",
-      entry: "Revisión de cumplimiento de tareas",
-      description:
-        "Se valida avance de tareas recurrentes y se reasignan pendientes a Patricia Mendoza.",
-      date: todayIso,
-      time: "19:00",
-      status: "warning",
-      frequency: "semanal",
-      shift: "vespertino",
-      incidentType: "Cumplimiento de tareas",
-      severity: "media",
-      comments: [
-        "Pendientes reasignados a supervisora de turno para cierre.",
-      ],
-    },
-    {
-      id: 20,
-      stationId: "st2",
-      user: "Jefe Área Seguridad",
-      entry: "Asignación de ronda nocturna",
-      description:
-        "Se asigna ronda perimetral nocturna a Carlos Pérez y Operador Cumbres 2.",
-      date: isoOffset(1),
-      time: "20:30",
-      status: "ok",
-      frequency: "diaria",
-      shift: "nocturno",
-      incidentType: "Ronda de seguridad",
-      severity: "baja",
-      comments: [
-        "Objetivo: validar corrección de fallas de luminaria y accesos.",
-      ],
-    },
-    {
-      id: 21,
-      stationId: "st1",
-      user: "Operador Torres 1",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa de Magna por 20,000 litros. Horario de descarga: 07:30 a 08:10.",
-      date: isoOffset(-3),
-      time: "07:30",
-      status: "ok",
-      frequency: "unica",
-      shift: "matutino",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-001.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-001.jpg",
-      fuelType: "Magna",
-      fuelLiters: 20000,
-    },
-    {
-      id: 22,
-      stationId: "st2",
-      user: "Operador Cumbres 1",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa de Diésel por 15,500 litros. Horario de descarga: 09:15 a 09:55.",
-      date: isoOffset(-1),
-      time: "09:15",
-      status: "ok",
-      frequency: "unica",
-      shift: "matutino",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-002.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-002.jpg",
-      fuelType: "Diésel",
-      fuelLiters: 15500,
-    },
-    {
-      id: 23,
-      stationId: "st3",
-      user: "Operador Centro 2",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa de Premium por 12,000 litros. Horario de descarga: 18:05 a 18:40.",
-      date: todayIso,
-      time: "18:05",
-      status: "ok",
-      frequency: "unica",
-      shift: "vespertino",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-003.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-003.jpg",
-      fuelType: "Premium",
-      fuelLiters: 12000,
-    },
-    {
-      id: 24,
-      stationId: "st1",
-      user: "Operador Torres 2",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa de Diésel por 18,000 litros. Horario de descarga: 22:10 a 22:45.",
-      date: isoOffset(-5),
-      time: "22:10",
-      status: "ok",
-      frequency: "unica",
-      shift: "nocturno",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-004.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-004.jpg",
-      fuelType: "Diésel",
-      fuelLiters: 18000,
-    },
-    {
-      id: 25,
-      stationId: "st2",
-      user: "Operador Cumbres 2",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa de Magna por 19,000 litros. Horario de descarga: 06:50 a 07:25.",
-      date: isoOffset(2),
-      time: "06:50",
-      status: "ok",
-      frequency: "unica",
-      shift: "matutino",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-005.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-005.jpg",
-      fuelType: "Magna",
-      fuelLiters: 19000,
-    },
-    {
-      id: 26,
-      stationId: "st4",
-      user: "Operador Aeropuerto 1",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa de Magna por 22,000 litros. Horario de descarga: 05:40 a 06:20.",
-      date: isoOffset(-2),
-      time: "05:40",
-      status: "ok",
-      frequency: "unica",
-      shift: "matutino",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-006.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-006.jpg",
-      fuelType: "Magna",
-      fuelLiters: 22000,
-    },
-    {
-      id: 27,
-      stationId: "st4",
-      user: "Operador Aeropuerto 2",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa de Diésel por 24,000 litros. Horario de descarga: 13:10 a 13:55.",
-      date: todayIso,
-      time: "13:10",
-      status: "ok",
-      frequency: "unica",
-      shift: "vespertino",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-007.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-007.jpg",
-      fuelType: "Diésel",
-      fuelLiters: 24000,
-    },
-    {
-      id: 28,
-      stationId: "st5",
-      user: "Operador Valle 1",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa de Premium por 14,500 litros. Horario de descarga: 10:20 a 10:55.",
-      date: isoOffset(-4),
-      time: "10:20",
-      status: "ok",
-      frequency: "unica",
-      shift: "matutino",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-008.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-008.jpg",
-      fuelType: "Premium",
-      fuelLiters: 14500,
-    },
-    {
-      id: 29,
-      stationId: "st5",
-      user: "Operador Valle 2",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa de Diésel por 20,000 litros. Horario de descarga: 21:00 a 21:35.",
-      date: isoOffset(-1),
-      time: "21:00",
-      status: "ok",
-      frequency: "unica",
-      shift: "nocturno",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-009.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-009.jpg",
-      fuelType: "Diésel",
-      fuelLiters: 20000,
-    },
-    // Pipa nocturna semanal por estación (histórico adicional)
-    {
-      id: 30,
-      stationId: "st1",
-      user: "Operador Torres 3",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa nocturna de Magna por 21,000 litros. Descarga de 23:10 a 23:45.",
-      date: isoOffset(-7),
-      time: "23:10",
-      status: "ok",
-      frequency: "unica",
-      shift: "nocturno",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-010.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-010.jpg",
-      fuelType: "Magna",
-      fuelLiters: 21000,
-    },
-    {
-      id: 31,
-      stationId: "st2",
-      user: "Operador Cumbres 3",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa nocturna de Diésel por 23,500 litros. Descarga de 00:20 a 01:00.",
-      date: isoOffset(-8),
-      time: "00:20",
-      status: "ok",
-      frequency: "unica",
-      shift: "nocturno",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-011.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-011.jpg",
-      fuelType: "Diésel",
-      fuelLiters: 23500,
-    },
-    {
-      id: 32,
-      stationId: "st3",
-      user: "Operador Centro 1",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa nocturna de Premium por 16,000 litros. Descarga de 22:30 a 23:05.",
-      date: isoOffset(-6),
-      time: "22:30",
-      status: "ok",
-      frequency: "unica",
-      shift: "nocturno",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-012.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-012.jpg",
-      fuelType: "Premium",
-      fuelLiters: 16000,
-    },
-    {
-      id: 33,
-      stationId: "st4",
-      user: "Operador Aeropuerto 3",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa nocturna de Magna por 25,000 litros. Descarga de 02:15 a 02:55.",
-      date: isoOffset(-9),
-      time: "02:15",
-      status: "ok",
-      frequency: "unica",
-      shift: "nocturno",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-013.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-013.jpg",
-      fuelType: "Magna",
-      fuelLiters: 25000,
-    },
-    {
-      id: 34,
-      stationId: "st5",
-      user: "Operador Valle 3",
-      entry: "Recepción de pipa/autotanque",
-      description:
-        "Recepción de pipa nocturna de Diésel por 22,000 litros. Descarga de 23:40 a 00:15.",
-      date: isoOffset(-10),
-      time: "23:40",
-      status: "ok",
-      frequency: "unica",
-      shift: "nocturno",
-      incidentType: "Recepción de pipa",
-      severity: "baja",
-      manualUrl: "https://ejemplo.com/carta-porte-014.pdf",
-      evidenceUrl: "https://ejemplo.com/ticket-pipa-014.jpg",
-      fuelType: "Diésel",
-      fuelLiters: 22000,
-    },
-  ];
-
-  // Historial adicional generado: 2 recepciones de pipa por semana y por estación
-  // durante varias semanas hacia atrás para enriquecer los análisis.
-  try {
-    var lastSeedId = adminState.logs.reduce(function (max, l) {
-      if (!l || typeof l.id !== "number") return max;
-      return l.id > max ? l.id : max;
-    }, 0);
-
-    var generatedId = lastSeedId + 1;
-    var pipaStations = [
-      { id: "st1", user: "Operador Torres 1", fuelType: "Magna" },
-      { id: "st2", user: "Operador Cumbres 1", fuelType: "Diésel" },
-      { id: "st3", user: "Operador Centro 1", fuelType: "Premium" },
-      { id: "st4", user: "Operador Aeropuerto 1", fuelType: "Magna" },
-      { id: "st5", user: "Operador Valle 1", fuelType: "Diésel" },
-    ];
-
-    var weeksBack = 6; // ~ mes y medio de historial adicional
-    for (var w = 2; w <= weeksBack + 1; w++) {
-      var baseDays = -7 * w;
-
-      for (var s = 0; s < pipaStations.length; s++) {
-        var st = pipaStations[s];
-
-        // Pipa 1 de la semana (turno matutino)
-        adminState.logs.push({
-          id: generatedId++,
-          stationId: st.id,
-          user: st.user,
-          entry: "Recepción de pipa/autotanque",
-          description:
-            "Recepción programada de pipa de " +
-            st.fuelType +
-            " para reposición semanal.",
-          date: isoOffset(baseDays),
-          time: "07:15",
-          status: "ok",
-          frequency: "unica",
-          shift: "matutino",
-          incidentType: "Recepción de pipa",
-          severity: "baja",
-          fuelType: st.fuelType,
-          fuelLiters: 18000 + w * 500,
-        });
-
-        // Pipa 2 de la semana (turno vespertino)
-        adminState.logs.push({
-          id: generatedId++,
-          stationId: st.id,
-          user: st.user,
-          entry: "Recepción de pipa/autotanque",
-          description:
-            "Segunda recepción semanal de pipa de " +
-            st.fuelType +
-            " para asegurar inventario.",
-          date: isoOffset(baseDays + 3),
-          time: "17:30",
-          status: "ok",
-          frequency: "unica",
-          shift: "vespertino",
-          incidentType: "Recepción de pipa",
-          severity: "baja",
-          fuelType: st.fuelType,
-          fuelLiters: 19000 + w * 400,
-        });
-      }
-    }
-  } catch (e) {
-    console.error("No se pudo generar historial adicional de pipas demo", e);
-  }
-
-  adminState.generalLogs = [
-    {
-      id: 1,
-      user: "Administrador1",
-      role: "admin",
-      activity: "Alta de estación",
-      description: "Se creó Estación Cumbres.",
-      date: isoOffset(-7),
-      time: "10:15",
-      status: "ok",
-    },
-    {
-      id: 2,
-      user: "Jefe Estación Operación",
-      role: "jefe_estacion",
-      activity: "Asignación de tareas",
-      description: "Se asignan actividades diarias a Operación Las Torres.",
-      date: isoOffset(-1),
-      time: "16:40",
-      status: "ok",
-    },
-    {
-      id: 3,
-      user: "Jefe Estación Seguridad",
-      role: "jefe_estacion",
-      activity: "Registro de incidente",
-      description: "Se registra incidente menor en zona de descarga.",
-      date: isoOffset(-1),
-      time: "21:35",
-      status: "warning",
-    },
-    {
-      id: 4,
-      user: "Administrador1",
-      role: "admin",
-      activity: "Inicio de sesión",
-      description: "Administrador1 inicia sesión en módulo de administración.",
-      date: todayIso,
-      time: "08:00",
-      status: "ok",
-    },
-    {
-      id: 5,
-      user: "Jefe Estación Las Torres",
-      role: "jefe_estacion",
-      activity: "Inicio de sesión",
-      description: "Jefe de estación accede para revisar bitácora.",
-      date: todayIso,
-      time: "08:15",
-      status: "ok",
-    },
-    {
-      id: 6,
-      user: "Jefe Estación Seguridad",
-      role: "jefe_estacion",
-      activity: "Revisión de incidentes críticos",
-      description:
-        "Se revisan incidentes críticos pendientes y se solicita evidencia adicional.",
-      date: todayIso,
-      time: "09:30",
-      status: "warning",
-    },
-    {
-      id: 7,
-      user: "Auditor Seguridad",
-      role: "auditor",
-      activity: "Visita de seguimiento",
-      description:
-        "Auditor visita Estación Cumbres para validar planes de acción.",
-      date: isoOffset(-1),
-      time: "12:10",
-      status: "ok",
-    },
-    {
-      id: 8,
-      user: "Administrador1",
-      role: "admin",
-      activity: "Actualización de usuarios",
-      description:
-        "Se actualizan usuarios de operación e inversiones en estaciones.",
-      date: isoOffset(-2),
-      time: "17:25",
-      status: "ok",
-    },
-    {
-      id: 9,
-      user: "Jefe Estación Las Torres",
-      role: "jefe_estacion",
-      activity: "Cierre de turno",
-      description:
-        "Jefe de estación registra cierre general y novedades del día.",
-      date: isoOffset(-1),
-      time: "23:10",
-      status: "ok",
-    },
-    {
-      id: 10,
-      user: "Administrador1",
-      role: "admin",
-      activity: "Exportación de respaldo",
-      description:
-        "Se genera respaldo completo de configuración y operación del sistema.",
-      date: todayIso,
-      time: "19:40",
-      status: "ok",
-    },
-    {
-      id: 11,
-      user: "Jefe Estación Operación",
-      role: "jefe_estacion",
-      activity: "Revisión de KPIs mensuales",
-      description:
-        "Se revisan KPIs de incidentes y cumplimiento de checklist del mes.",
-      date: isoOffset(-3),
-      time: "11:55",
-      status: "ok",
-    },
-  ];
-
-  // Usuarios semilla: solo un administrador base.
-  // A partir de este usuario podrás crear el resto desde la vista "Usuarios" del panel admin.
   adminState.users = [
     {
       id: 1,
-      name: "Administrador",
-      username: "admin",
-      password: "admin123",
+      name: "Misa",
+      username: "misa",
+      password: "Pepepito2",
       role: "admin",
       stationId: "",
       area: "Corporativo",
       passwordLastChanged: todayIso,
+      locked: false,
     },
   ];
 
-  adminState.shifts = [
-    {
-      id: 1,
-      stationId: "st1",
-      date: todayIso,
-      shift: "matutino",
-      entregaPor: "Luis Ramirez",
-      recibePor: "Jefe Estación Las Torres",
-      novedades: "Turno sin incidentes, niveles dentro de rango.",
-    },
-    {
-      id: 2,
-      stationId: "st2",
-      date: todayIso,
-      shift: "nocturno",
-      entregaPor: "Carlos Pérez",
-      recibePor: "Jefe Estación Seguridad",
-      novedades: "Se reporta falla intermitente en luminaria del andén norte.",
-    },
-    {
-      id: 3,
-      stationId: "st1",
-      date: isoOffset(-1),
-      shift: "vespertino",
-      entregaPor: "María González",
-      recibePor: "Patricia Mendoza",
-      novedades:
-        "Se entregan pendientes de inventario de tienda y limpieza ligera.",
-    },
-    {
-      id: 4,
-      stationId: "st2",
-      date: isoOffset(-1),
-      shift: "matutino",
-      entregaPor: "Operador Cumbres 1",
-      recibePor: "Miguel Torres",
-      novedades:
-        "Se revisan recomendaciones de auditoría y se programan acciones.",
-    },
-    {
-      id: 5,
-      stationId: "st1",
-      date: isoOffset(-2),
-      shift: "matutino",
-      entregaPor: "Luis Ramirez",
-      recibePor: "Jefe Estación Las Torres",
-      novedades: "Turno con alto flujo, sin incidentes relevantes.",
-    },
-  ];
+  // Catálogo de turnos inicia vacío; se irán agregando desde la vista de Gestión turnos
+  adminState.shifts = [];
+
+  // Políticas de seguridad por defecto
+  adminState.securitySettings = { ...DEFAULT_SECURITY_SETTINGS };
+
+  // Configuración de alertas por defecto
+  adminState.alertSettings = { ...DEFAULT_ALERT_SETTINGS };
+  adminState.alerts = [];
+  adminState.maintenance = [];
+}
+
+function getSecuritySettingsFromState() {
+  const base = { ...DEFAULT_SECURITY_SETTINGS };
+  const cfg = adminState && adminState.securitySettings;
+  if (cfg && typeof cfg === "object") {
+    if (typeof cfg.maxFailedAttempts === "number" && cfg.maxFailedAttempts > 0) {
+      base.maxFailedAttempts = cfg.maxFailedAttempts;
+    }
+    if (typeof cfg.lockWindowMinutes === "number" && cfg.lockWindowMinutes > 0) {
+      base.lockWindowMinutes = cfg.lockWindowMinutes;
+    }
+    if (
+      typeof cfg.passwordExpiryDays === "number" &&
+      cfg.passwordExpiryDays > 0 &&
+      cfg.passwordExpiryDays <= 365
+    ) {
+      base.passwordExpiryDays = cfg.passwordExpiryDays;
+    }
+  }
+  adminState.securitySettings = base;
+  return base;
+}
+
+function getAlertSettingsFromState() {
+  const base = { ...DEFAULT_ALERT_SETTINGS };
+  const cfg = adminState && adminState.alertSettings;
+  if (cfg && typeof cfg === "object") {
+    if (typeof cfg.enableCriticalAlerts === "boolean") {
+      base.enableCriticalAlerts = cfg.enableCriticalAlerts;
+    }
+    if (typeof cfg.enableStationBurstAlerts === "boolean") {
+      base.enableStationBurstAlerts = cfg.enableStationBurstAlerts;
+    }
+    if (
+      typeof cfg.stationBurstThreshold === "number" &&
+      cfg.stationBurstThreshold >= 2
+    ) {
+      base.stationBurstThreshold = cfg.stationBurstThreshold;
+    }
+    if (
+      typeof cfg.stationBurstWindowMinutes === "number" &&
+      cfg.stationBurstWindowMinutes >= 15
+    ) {
+      base.stationBurstWindowMinutes = cfg.stationBurstWindowMinutes;
+    }
+  }
+  adminState.alertSettings = base;
+  if (!Array.isArray(adminState.alerts)) {
+    adminState.alerts = [];
+  }
+  return base;
+}
+
+function ensureAlertsArray() {
+  if (!Array.isArray(adminState.alerts)) {
+    adminState.alerts = [];
+  }
+  return adminState.alerts;
+}
+
+function nextAlertId() {
+  const alerts = ensureAlertsArray();
+  const max = alerts.reduce((m, a) => Math.max(m, a.id || 0), 0);
+  return max + 1;
+}
+
+function evaluateAlertRulesForLog(log) {
+  const settings = getAlertSettingsFromState();
+  const triggered = [];
+
+  const isIncident =
+    log && (log.status === "warning" || log.status === "error");
+
+  if (
+    settings.enableCriticalAlerts &&
+    log &&
+    log.status === "error" &&
+    (log.severity || "").toLowerCase() === "alta"
+  ) {
+    triggered.push({
+      rule: "critical_incident",
+      level: "critico",
+      message: "Incidente crítico (error · severidad alta)",
+    });
+  }
+
+  if (
+    settings.enableStationBurstAlerts &&
+    log &&
+    log.stationId &&
+    isIncident
+  ) {
+    const minutes = settings.stationBurstWindowMinutes || 60;
+    const threshold = settings.stationBurstThreshold || 3;
+    const now = new Date();
+    const windowMs = minutes * 60 * 1000;
+
+    let count = 0;
+    (adminState.logs || []).forEach((l) => {
+      if (!l || l.stationId !== log.stationId) return;
+      if (!(l.status === "warning" || l.status === "error")) return;
+      const ts = l.createdAt || `${l.date || ""}T${l.time || ""}`;
+      if (!ts) return;
+      const d = new Date(ts);
+      if (!d || isNaN(d.getTime())) return;
+      if (now.getTime() - d.getTime() <= windowMs) {
+        count += 1;
+      }
+    });
+
+    if (count >= threshold) {
+      triggered.push({
+        rule: "station_burst",
+        level: "alto",
+        message: `Racha de incidentes en la estación (>${threshold - 1} en ${minutes} min)` ,
+      });
+    }
+  }
+
+  return triggered;
+}
+
+async function createAlertsForLog(log) {
+  const rules = evaluateAlertRulesForLog(log);
+  if (!rules.length) return;
+
+  const alerts = ensureAlertsArray();
+  const station =
+    (adminState.stations || []).find((s) => s.id === log.stationId) || null;
+
+  const nowIso = new Date().toISOString();
+
+  rules.forEach((rule) => {
+    const alert = {
+      id: nextAlertId(),
+      createdAt: nowIso,
+      logId: log.id,
+      stationId: log.stationId || "",
+      stationName: station ? station.name : "",
+      user: log.user || "",
+      description: log.description || "",
+      incidentType: log.incidentType || "",
+      severity: log.severity || "",
+      status: "activa",
+      rule: rule.rule,
+      level: rule.level,
+      message: rule.message,
+    };
+    alerts.push(alert);
+
+    try {
+      addGeneralLogEntry(
+        "Alerta generada",
+        `${alert.message} para el registro ${log.id} (${alert.stationName || "Sin estación"}).`,
+        "warning"
+      );
+    } catch (e) {
+      // silencioso
+    }
+
+    try {
+      notifyBackendAboutAlert(alert).catch(() => {});
+    } catch (e) {
+      // silencioso
+    }
+  });
+
+  saveAdminState();
+  try {
+    updateTopbarAlertMetrics();
+    renderAlertsView();
+    renderSecurityView();
+    renderTvView();
+  } catch (e) {
+    // silencioso
+  }
+}
+
+async function notifyBackendAboutAlert(alert) {
+  if (!BACKEND_ADMIN_ENABLED || !BACKEND_URL) return;
+  try {
+    await fetch(`${BACKEND_URL}/api/notify-alert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: alert.rule,
+        level: alert.level,
+        message: alert.message,
+        stationId: alert.stationId,
+        stationName: alert.stationName,
+        severity: alert.severity,
+        logId: alert.logId,
+      }),
+    });
+  } catch (e) {
+    // silencioso
+  }
 }
 
 function resolveAssignedStationId() {
@@ -1391,7 +357,11 @@ function setAdminView(viewKey) {
     users: "admin-view-users",
     profile: "admin-view-profile",
     stations: "admin-view-stations",
+    "stations-globe": "admin-view-stations-globe",
     tv: "admin-view-tv",
+    security: "admin-view-security",
+    settings: "admin-view-settings",
+    maintenance: "admin-view-maintenance",
   };
 
   const targetId = map[viewKey];
@@ -1407,7 +377,49 @@ function setAdminView(viewKey) {
   });
 
   if (viewKey === "logs") {
+    // Restaurar filtros guardados de bitácora (si existen)
+    try {
+      const raw = window.localStorage.getItem(LOG_FILTERS_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved && typeof saved === "object") {
+          const filterStation = document.getElementById("log-filter-station");
+          const filterStatus = document.getElementById("log-filter-status");
+          const filterFreq = document.getElementById("log-filter-frequency");
+          const filterFuelType = document.getElementById("log-filter-fueltype");
+          const filterFrom = document.getElementById("log-filter-from");
+          const filterTo = document.getElementById("log-filter-to");
+          const filterShift = document.getElementById("log-filter-shift");
+          const searchEl = document.getElementById("log-search");
+
+          if (filterStation && saved.stationId != null)
+            filterStation.value = saved.stationId;
+          if (filterStatus && saved.status != null)
+            filterStatus.value = saved.status;
+          if (filterFreq && saved.frequency != null)
+            filterFreq.value = saved.frequency;
+          if (filterFuelType && saved.fuelType != null)
+            filterFuelType.value = saved.fuelType;
+          if (filterFrom && saved.fromDate != null)
+            filterFrom.value = saved.fromDate;
+          if (filterTo && saved.toDate != null) filterTo.value = saved.toDate;
+          if (filterShift && saved.shift != null)
+            filterShift.value = saved.shift;
+          if (searchEl && saved.search != null)
+            searchEl.value = saved.search;
+
+          // Si venimos desde el globo con una estación específica, forzar ese filtro
+          if (pendingLogStationFilterId && filterStation) {
+            filterStation.value = pendingLogStationFilterId;
+          }
+        }
+      }
+    } catch (e) {
+      // silencioso
+    }
+
     renderLogs();
+    pendingLogStationFilterId = "";
     if (!adminCalendar) {
       initAdminCalendar();
     } else {
@@ -1416,11 +428,51 @@ function setAdminView(viewKey) {
     }
   }
   if (viewKey === "alerts") {
+    // Asegurar que las alertas y su configuración estén normalizadas
+    getAlertSettingsFromState();
+    ensureAlertsArray();
+    // Restaurar filtros guardados de alertas (si existen)
+    try {
+      const raw = window.localStorage.getItem(ALERT_FILTERS_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved && typeof saved === "object") {
+          const stationSelect = document.getElementById(
+            "alerts-filter-station"
+          );
+          const severitySelect = document.getElementById(
+            "alerts-filter-severity"
+          );
+          const fromInput = document.getElementById("alerts-filter-from");
+          const toInput = document.getElementById("alerts-filter-to");
+          const sentOnlyInput = document.getElementById("alerts-filter-sent");
+          const searchEl = document.getElementById("alerts-search");
+
+          if (stationSelect && saved.stationId != null)
+            stationSelect.value = saved.stationId;
+          if (severitySelect && saved.severity != null)
+            severitySelect.value = saved.severity;
+          if (fromInput && saved.fromDate != null)
+            fromInput.value = saved.fromDate;
+          if (toInput && saved.toDate != null) toInput.value = saved.toDate;
+          if (sentOnlyInput && typeof saved.sentOnly === "boolean")
+            sentOnlyInput.checked = saved.sentOnly;
+          if (searchEl && saved.search != null)
+            searchEl.value = saved.search;
+        }
+      }
+    } catch (e) {
+      // silencioso
+    }
+
     renderAlerts();
   }
   if (viewKey === "general") renderGeneralLogs();
   if (viewKey === "activities") renderActivitiesView();
   if (viewKey === "stations") renderStations();
+  if (viewKey === "stations-globe") {
+    initStationsGlobe();
+  }
   if (viewKey === "dashboard") {
     hydrateDashboardStationSelect();
     renderDashboard();
@@ -1439,6 +491,58 @@ function setAdminView(viewKey) {
   }
   if (viewKey === "tv") {
     renderTvView();
+  }
+  if (viewKey === "security") {
+    renderSecurityView();
+  }
+  if (viewKey === "settings") {
+    renderSettingsView();
+  }
+  if (viewKey === "maintenance") {
+    hydrateMaintenanceStationSelect();
+    renderMaintenanceView();
+  }
+}
+
+function renderSettingsView() {
+  const settings = getSecuritySettingsFromState();
+  const alertSettings = getAlertSettingsFromState();
+  const maxFailedInput = document.getElementById("settings-max-failed");
+  const lockWindowInput = document.getElementById("settings-lock-window");
+  const expiryInput = document.getElementById("settings-password-expiry");
+  const burstThresholdInput = document.getElementById(
+    "settings-alert-burst-threshold"
+  );
+  const burstWindowInput = document.getElementById(
+    "settings-alert-burst-window"
+  );
+  const criticalToggle = document.getElementById(
+    "settings-alert-critical-enabled"
+  );
+  const burstToggle = document.getElementById(
+    "settings-alert-burst-enabled"
+  );
+
+  if (maxFailedInput) {
+    maxFailedInput.value = String(settings.maxFailedAttempts);
+  }
+  if (lockWindowInput) {
+    lockWindowInput.value = String(settings.lockWindowMinutes);
+  }
+  if (expiryInput) {
+    expiryInput.value = String(settings.passwordExpiryDays);
+  }
+  if (burstThresholdInput) {
+    burstThresholdInput.value = String(alertSettings.stationBurstThreshold);
+  }
+  if (burstWindowInput) {
+    burstWindowInput.value = String(alertSettings.stationBurstWindowMinutes);
+  }
+  if (criticalToggle) {
+    criticalToggle.checked = !!alertSettings.enableCriticalAlerts;
+  }
+  if (burstToggle) {
+    burstToggle.checked = !!alertSettings.enableStationBurstAlerts;
   }
 }
 
@@ -2292,6 +1396,10 @@ function renderLogs() {
   pageItems.forEach((log) => {
     const tr = document.createElement("tr");
 
+    if (log.status && String(log.status).toLowerCase() !== "ok") {
+      tr.classList.add("admin-row-nok");
+    }
+
     const overdue = isPastDue(log.date) && log.status !== "ok";
     if (overdue) {
       tr.classList.add("log-row-overdue");
@@ -2521,6 +1629,21 @@ function renderAlerts() {
   const fromDate = fromInput ? fromInput.value : "";
   const toDate = toInput ? toInput.value : "";
   const sentOnly = !!(sentOnlyInput && sentOnlyInput.checked);
+
+  // Guardar filtros actuales de alertas
+  try {
+    const filters = {
+      stationId: stationIdFilter,
+      severity: severityFilter,
+      fromDate,
+      toDate,
+      sentOnly,
+      search,
+    };
+    window.localStorage.setItem(ALERT_FILTERS_KEY, JSON.stringify(filters));
+  } catch (e) {
+    // silencioso
+  }
 
   // Opciones de estación (se regeneran rápido aquí)
   if (stationSelect && !stationSelect.dataset.hydrated) {
@@ -2866,11 +1989,17 @@ function renderGeneralLogs() {
     .value.trim()
     .toLowerCase();
 
+  const todayOnlyToggle = !!generalTodayOnly;
+
   const filtered = [];
 
   adminState.generalLogs.forEach((log) => {
     const rowText = `${log.user} ${log.activity} ${log.description}`.toLowerCase();
     if (search && !rowText.includes(search)) return;
+    if (todayOnlyToggle) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      if (!log.date || log.date !== todayStr) return;
+    }
     filtered.push(log);
   });
 
@@ -2886,6 +2015,10 @@ function renderGeneralLogs() {
     const infoEl = document.getElementById("general-pagination-info");
     if (infoEl) {
       infoEl.textContent = "0 registros";
+    }
+    const summaryEl = document.getElementById("general-summary");
+    if (summaryEl) {
+      summaryEl.textContent = "Hoy: 0 · Últimos 7 días: 0 · Total: 0";
     }
     const prevBtn = document.getElementById("general-page-prev");
     const nextBtn = document.getElementById("general-page-next");
@@ -2904,6 +2037,38 @@ function renderGeneralLogs() {
 
   const from = start + 1;
   const to = start + pageItems.length;
+
+  // Actualizar resumen Hoy / 7 días / Total (sobre todos los registros, no solo filtrados)
+  try {
+    const summaryEl = document.getElementById("general-summary");
+    if (summaryEl) {
+      const logs = Array.isArray(adminState.generalLogs)
+        ? adminState.generalLogs
+        : [];
+      const todayStr = new Date().toISOString().slice(0, 10);
+      let todayCount = 0;
+      let last7Count = 0;
+      const todayDate = new Date(todayStr + "T00:00:00");
+
+      logs.forEach((g) => {
+        if (!g || !g.date) return;
+        if (g.date === todayStr) {
+          todayCount += 1;
+        }
+        const d = new Date(g.date + "T00:00:00");
+        if (isNaN(d.getTime())) return;
+        const diffMs = todayDate.getTime() - d.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        if (diffDays >= 0 && diffDays <= 6) {
+          last7Count += 1;
+        }
+      });
+
+      summaryEl.textContent = `Hoy: ${todayCount} · Últimos 7 días: ${last7Count} · Total: ${logs.length}`;
+    }
+  } catch (e) {
+    console.error("No se pudo actualizar resumen de bitácora general", e);
+  }
 
   pageItems.forEach((log) => {
     const tr = document.createElement("tr");
@@ -2948,7 +2113,14 @@ function renderGeneralLogs() {
 
   const infoEl = document.getElementById("general-pagination-info");
   if (infoEl) {
-    infoEl.textContent = `Mostrando ${from}-${to} de ${total}`;
+    const totalAll = Array.isArray(adminState.generalLogs)
+      ? adminState.generalLogs.length
+      : total;
+    if (totalAll && totalAll !== total) {
+      infoEl.textContent = `Mostrando ${from}-${to} de ${total} (filtrados de ${totalAll})`;
+    } else {
+      infoEl.textContent = `Mostrando ${from}-${to} de ${total}`;
+    }
   }
   const prevBtn = document.getElementById("general-page-prev");
   const nextBtn = document.getElementById("general-page-next");
@@ -2968,6 +2140,8 @@ function renderStations() {
 
   const isJefeEstacion = currentUser && currentUser.role === "jefe_estacion";
 
+  let highlightedCard = null;
+
   adminState.stations.forEach((st) => {
     if (isJefeEstacion && assignedStationId && st.id !== assignedStationId) {
       return;
@@ -2985,7 +2159,16 @@ function renderStations() {
     nameEl.textContent = st.name;
     const meta = document.createElement("div");
     meta.className = "admin-station-meta";
-    meta.textContent = st.location;
+    const years = [];
+    if (st.yearFrom) years.push(`Desde ${st.yearFrom}`);
+    if (st.yearTo) years.push(`Hasta ${st.yearTo}`);
+    const yearsText = years.length ? ` · ${years.join(" · ")}` : "";
+    const isActive = st.active !== false;
+    let statusText = "";
+    if (!isActive) {
+      statusText = yearsText ? " · Inactiva" : "Inactiva";
+    }
+    meta.textContent = `${st.location || "Sin ubicación"}${yearsText}${statusText}`;
     header.appendChild(nameEl);
     header.appendChild(meta);
 
@@ -2996,28 +2179,257 @@ function renderStations() {
     const employeesWrap = document.createElement("div");
     employeesWrap.className = "admin-station-employees";
 
-    const employees = st.employees || [];
+    // Construir lista de usuarios ligados a la estación (jefe y operadores)
+    const stationUsers = (adminState.users || []).filter(
+      (u) => u.stationId === st.id
+    );
 
-    if (employees.length) {
-      const title = document.createElement("div");
-      title.textContent = "Equipo:";
-      title.style.fontWeight = "600";
-      const list = document.createElement("div");
-      list.textContent = employees
-        .map((e) => `${e.name} (${e.role})`)
+    const headerRow = document.createElement("div");
+    headerRow.className = "admin-station-employees-header";
+
+    const title = document.createElement("div");
+    title.className = "admin-station-employees-title";
+    title.textContent = "Equipo";
+    headerRow.appendChild(title);
+
+    if (can("manageUsers")) {
+      const actionsRow = document.createElement("div");
+      actionsRow.className = "admin-station-employees-actions";
+
+      const reassignChiefBtn = document.createElement("button");
+      reassignChiefBtn.type = "button";
+      reassignChiefBtn.className = "ghost-btn";
+      reassignChiefBtn.textContent = "Jefe";
+      reassignChiefBtn.title = "Reasignar jefe de estación";
+      reassignChiefBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const jefe = (adminState.users || []).find(
+          (u) => u.role === "jefe_estacion" && u.stationId === st.id
+        );
+        setAdminView("users");
+        const searchEl = document.getElementById("users-search");
+        if (searchEl && jefe) {
+          searchEl.value = jefe.username || jefe.name || "";
+        }
+        renderUsers();
+      });
+      actionsRow.appendChild(reassignChiefBtn);
+
+      const manageOpsBtn = document.createElement("button");
+      manageOpsBtn.type = "button";
+      manageOpsBtn.className = "ghost-btn";
+      manageOpsBtn.textContent = "Operadores";
+      manageOpsBtn.title = "Gestionar operadores de esta estación";
+      manageOpsBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        setAdminView("users");
+        const roleFilter = document.getElementById("users-filter-role");
+        if (roleFilter) {
+          roleFilter.value = "empleado";
+        }
+        const searchEl = document.getElementById("users-search");
+        if (searchEl) {
+          searchEl.value = st.name || "";
+        }
+        renderUsers();
+      });
+      actionsRow.appendChild(manageOpsBtn);
+
+      headerRow.appendChild(actionsRow);
+    }
+
+    employeesWrap.appendChild(headerRow);
+
+    const list = document.createElement("div");
+    if (stationUsers.length) {
+      list.textContent = stationUsers
+        .map((u) => `${u.name} (${u.role || ""})`)
         .join(", ");
-      employeesWrap.appendChild(title);
-      employeesWrap.appendChild(list);
     } else {
-      employeesWrap.textContent = "Sin operadores asignados";
+      list.textContent = "Sin operadores asignados";
+    }
+    employeesWrap.appendChild(list);
+
+    const actions = document.createElement("div");
+    actions.className = "admin-station-actions";
+
+    if (can("manageStations")) {
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "ghost-btn admin-station-edit-btn";
+      editBtn.textContent = "Editar";
+      editBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+
+        // Marcar visualmente la tarjeta en edición
+        document
+          .querySelectorAll(".admin-station-card")
+          .forEach((c) => c.classList.remove("is-editing"));
+        card.classList.add("is-editing");
+
+        const form = document.getElementById("station-form");
+        if (!form) return;
+
+        const idInput = document.getElementById("station-id");
+        if (idInput) idInput.value = st.id;
+        stationsEditingId = st.id;
+
+        const nameInput = document.getElementById("station-name");
+        const locInput = document.getElementById("station-location");
+        const descInput = document.getElementById("station-desc");
+        const latInput = document.getElementById("station-lat");
+        const lngInput = document.getElementById("station-lng");
+        const yearFromInput = document.getElementById("station-year-from");
+        const yearToInput = document.getElementById("station-year-to");
+
+        if (nameInput) nameInput.value = st.name || "";
+        if (locInput) locInput.value = st.location || "";
+        if (descInput) descInput.value = st.description || "";
+        if (latInput)
+          latInput.value =
+            typeof st.lat === "number" && !Number.isNaN(st.lat)
+              ? String(st.lat)
+              : "";
+        if (lngInput)
+          lngInput.value =
+            typeof st.lng === "number" && !Number.isNaN(st.lng)
+              ? String(st.lng)
+              : "";
+        if (yearFromInput)
+          yearFromInput.value =
+            typeof st.yearFrom === "number" && !Number.isNaN(st.yearFrom)
+              ? String(st.yearFrom)
+              : "";
+        if (yearToInput)
+          yearToInput.value =
+            typeof st.yearTo === "number" && !Number.isNaN(st.yearTo)
+              ? String(st.yearTo)
+              : "";
+
+        const submitBtn = form.querySelector("button[type='submit']");
+        if (submitBtn) submitBtn.textContent = "Guardar cambios";
+      });
+      actions.appendChild(editBtn);
+
+      const toggleBtn = document.createElement("button");
+      toggleBtn.type = "button";
+      toggleBtn.className = "ghost-btn admin-station-toggle-btn";
+      toggleBtn.textContent = isActive ? "Desactivar" : "Activar";
+      toggleBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const target = adminState.stations.find((s) => s.id === st.id);
+        if (!target) return;
+
+        const willDeactivate = target.active !== false;
+        target.active = !willDeactivate;
+
+        saveAdminState();
+        renderStations();
+
+        addGeneralLogEntry(
+          willDeactivate ? "Desactivacion de estacion" : "Activacion de estacion",
+          `${willDeactivate ? "Se desactivó" : "Se activó"} la estación ${target.name} (ID: ${target.id}).`
+        );
+      });
+      actions.appendChild(toggleBtn);
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "danger-btn admin-station-delete-btn";
+      deleteBtn.textContent = "Eliminar";
+      deleteBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const confirmed = window.confirm(
+          `¿Seguro que deseas eliminar la estación "${st.name}"? Esta acción no se puede deshacer.`
+        );
+        if (!confirmed) return;
+
+        // Desasignar estación de usuarios vinculados
+        adminState.users.forEach((u) => {
+          if (u.stationId === st.id) {
+            u.stationId = "";
+          }
+        });
+
+        // Eliminar estación del catálogo
+        adminState.stations = adminState.stations.filter(
+          (s) => s.id !== st.id
+        );
+
+        saveAdminState();
+
+        // Actualizar selects dependientes
+        hydrateLogStationSelect();
+        hydrateLogFilterStationSelect();
+        hydrateDashboardStationSelect();
+        hydrateShiftStationSelect();
+        hydrateUserStationSelect();
+
+        stationsHighlightId = "";
+        if (stationsEditingId === st.id) {
+          stationsEditingId = "";
+          const form = document.getElementById("station-form");
+          if (form) {
+            form.reset();
+            const idInput = document.getElementById("station-id");
+            if (idInput) idInput.value = "";
+            const submitBtn = form.querySelector("button[type='submit']");
+            if (submitBtn) submitBtn.textContent = "Generar";
+          }
+        }
+
+        renderStations();
+
+        addGeneralLogEntry(
+          "Baja de estacion",
+          `Se eliminó la estación ${st.name} (ID: ${st.id}).`
+        );
+      });
+      actions.appendChild(deleteBtn);
     }
 
     card.appendChild(header);
     card.appendChild(desc);
     card.appendChild(employeesWrap);
 
+    if (stationsHighlightId && st.id === stationsHighlightId) {
+      card.classList.add("is-highlighted");
+      highlightedCard = card;
+    }
+
+    if (actions.childElementCount) {
+      card.appendChild(actions);
+    }
+
     list.appendChild(card);
   });
+
+  if (highlightedCard) {
+    try {
+      highlightedCard.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (e) {
+      // silencioso
+    }
+  }
+
+  // Actualizar chip de usuarios sin estación en la vista de estaciones
+  try {
+    const countUnassigned = (adminState.users || []).filter(
+      (u) => !u.stationId
+    ).length;
+    const chip = document.getElementById("stations-users-unassigned");
+    if (chip) {
+      if (countUnassigned > 0) {
+        chip.hidden = false;
+        chip.textContent = `Usuarios sin estación: ${countUnassigned}`;
+        chip.classList.add("admin-chip-danger-soft");
+      } else {
+        chip.hidden = true;
+      }
+    }
+  } catch (e) {
+    // silencioso
+  }
 }
 
 function renderShifts() {
@@ -3068,7 +2480,22 @@ function renderUsers() {
 
   tbody.innerHTML = "";
 
-  const total = adminState.users.length;
+  const searchEl = document.getElementById("users-search");
+  const roleSelect = document.getElementById("users-filter-role");
+  const search = searchEl ? searchEl.value.trim().toLowerCase() : "";
+  const roleFilter = roleSelect ? roleSelect.value : "";
+
+  const filtered = adminState.users.filter((user) => {
+    if (roleFilter && user.role !== roleFilter) return false;
+    if (search) {
+      const text = `${user.name || ""} ${user.username || ""}`
+        .toLowerCase();
+      if (!text.includes(search)) return false;
+    }
+    return true;
+  });
+
+  const total = filtered.length;
   const maxPage = total ? Math.ceil(total / USERS_PAGE_SIZE) : 1;
   if (usersPage > maxPage) {
     usersPage = maxPage;
@@ -3078,12 +2505,12 @@ function renderUsers() {
   }
 
   const start = (usersPage - 1) * USERS_PAGE_SIZE;
-  const pageItems = adminState.users.slice(start, start + USERS_PAGE_SIZE);
+  const pageItems = filtered.slice(start, start + USERS_PAGE_SIZE);
 
   if (!pageItems.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = 7;
+    td.colSpan = 8;
     td.className = "admin-empty-row";
     td.innerHTML =
       '<span class="admin-empty-row-icon">📭</span>' +
@@ -3178,6 +2605,26 @@ function renderUsers() {
     areaTd.textContent = user.area || "";
     tr.appendChild(areaTd);
 
+    // Estado (bloqueado / activo)
+    const statusTd = document.createElement("td");
+    statusTd.textContent = user.locked ? "Bloqueado" : "Activo";
+    tr.appendChild(statusTd);
+
+    // Estado de solicitud de cambio de contraseña
+    const pwdReqTd = document.createElement("td");
+    let pwdStatusLabel = "Sin solicitud";
+    if (user.pendingPassword) {
+      if (user.pendingPasswordStatus === "aprobada") {
+        pwdStatusLabel = "Aprobada";
+      } else if (user.pendingPasswordStatus === "rechazada") {
+        pwdStatusLabel = "Rechazada";
+      } else {
+        pwdStatusLabel = "Pendiente";
+      }
+    }
+    pwdReqTd.textContent = pwdStatusLabel;
+    tr.appendChild(pwdReqTd);
+
     tr.addEventListener("click", () => {
       document
         .querySelectorAll("#users-table tbody tr")
@@ -3199,6 +2646,25 @@ function renderUsers() {
   const nextBtn = document.getElementById("users-page-next");
   if (prevBtn) prevBtn.disabled = usersPage <= 1;
   if (nextBtn) nextBtn.disabled = usersPage >= maxPage;
+
+  // Actualizar chip de usuarios sin estación
+  try {
+    const countUnassigned = (adminState.users || []).filter(
+      (u) => !u.stationId
+    ).length;
+    const chip = document.getElementById("users-unassigned-chip");
+    if (chip) {
+      if (countUnassigned > 0) {
+        chip.hidden = false;
+        chip.textContent = `Sin estación asignada: ${countUnassigned}`;
+        chip.classList.add("admin-chip-danger-soft");
+      } else {
+        chip.hidden = true;
+      }
+    }
+  } catch (e) {
+    // silencioso
+  }
 }
 
 function showUserSummary(user) {
@@ -3206,6 +2672,10 @@ function showUserSummary(user) {
   const body = document.getElementById("user-summary-body");
   const tasksPanel = document.getElementById("user-tasks-panel");
   const tasksTableBody = document.querySelector("#user-tasks-table tbody");
+  const quickForm = document.getElementById("user-quick-edit-form");
+  const quickRole = document.getElementById("user-quick-role");
+  const quickStation = document.getElementById("user-quick-station");
+  const quickArea = document.getElementById("user-quick-area");
   const profileAvatar = document.getElementById("profile-avatar");
   const profileNameEl = document.getElementById("profile-header-name");
   const profileRoleEl = document.getElementById("profile-header-role");
@@ -3218,6 +2688,27 @@ function showUserSummary(user) {
 
   body.hidden = false;
   body.innerHTML = "";
+
+  if (quickForm && quickRole && quickStation && quickArea) {
+    quickForm.hidden = false;
+    quickForm.dataset.userId = String(user.id);
+    quickRole.value = user.role || "";
+
+    quickStation.innerHTML = "";
+    const optNone = document.createElement("option");
+    optNone.value = "";
+    optNone.textContent = "Sin estación";
+    quickStation.appendChild(optNone);
+    adminState.stations.forEach((st) => {
+      const opt = document.createElement("option");
+      opt.value = st.id;
+      opt.textContent = st.name;
+      if (user.stationId === st.id) opt.selected = true;
+      quickStation.appendChild(opt);
+    });
+
+    quickArea.value = user.area || "";
+  }
 
   if (tasksPanel && tasksTableBody) {
     tasksPanel.hidden = false;
@@ -3317,6 +2808,10 @@ function showUserSummary(user) {
   }
 
   const items = [
+    {
+      label: "Estado de cuenta",
+      value: user.locked ? "Bloqueado" : "Activo",
+    },
     {
       label: "Estación",
       value: station ? station.name : "Sin estación",
@@ -3826,6 +3321,93 @@ function exportFuelLogsCsv() {
   URL.revokeObjectURL(url);
 }
 
+function exportUsersCsv() {
+  const users = Array.isArray(adminState.users)
+    ? adminState.users.slice()
+    : [];
+
+  if (!users.length) {
+    showToast("No hay usuarios registrados para exportar.", "warning");
+    return;
+  }
+
+  const header = [
+    "ID",
+    "Nombre",
+    "Usuario",
+    "Rol",
+    "Estacion",
+    "Area",
+    "UltimoCambioContrasena",
+    "Bloqueado",
+  ];
+
+  const rows = users.map((user) => {
+    const station =
+      user.stationId &&
+      adminState.stations.find((s) => s.id === user.stationId);
+
+    let roleLabel = "";
+    switch (user.role) {
+      case "admin":
+        roleLabel = "Administrador";
+        break;
+      case "jefe_estacion":
+        roleLabel = "Jefe de estación";
+        break;
+      case "empleado":
+        roleLabel = "Operador";
+        break;
+      case "auditor":
+        roleLabel = "Auditor";
+        break;
+      case "supervisor":
+        roleLabel = "Supervisor regional";
+        break;
+      default:
+        roleLabel = user.role || "";
+    }
+
+    return [
+      user.id,
+      user.name || "",
+      user.username || "",
+      roleLabel,
+      station ? station.name : "",
+      user.area || "",
+      user.passwordLastChanged || "",
+      user.locked ? "SI" : "NO",
+    ];
+  });
+
+  const csvLines = [
+    header.join(","),
+    ...rows.map((r) =>
+      r
+        .map((value) => {
+          const v = value == null ? "" : String(value);
+          const escaped = v.replace(/"/g, '""');
+          return `"${escaped}"`;
+        })
+        .join(",")
+    ),
+  ];
+
+  const blob = new Blob([csvLines.join("\n")], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "cog-work-log-usuarios.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast("Usuarios exportados a CSV.", "success");
+}
+
 function setupAdminEvents() {
   const sidebar = document.querySelector(".admin-sidebar-nav");
   if (sidebar) {
@@ -3987,6 +3569,252 @@ function setupAdminEvents() {
     }
   }
 
+  const dashSecurityViewLogins = document.getElementById(
+    "dash-security-view-logins"
+  );
+  if (dashSecurityViewLogins) {
+    dashSecurityViewLogins.addEventListener("click", () => {
+      const generalSearch = document.getElementById("general-search");
+      if (generalSearch) {
+        generalSearch.value = "login";
+      }
+      // Limitar a eventos de hoy cuando se entra desde este botón
+      generalTodayOnly = true;
+      const btnToday = document.getElementById("btn-general-today");
+      if (btnToday) {
+        btnToday.classList.add("is-active");
+      }
+      setAdminView("general");
+      generalPage = 1;
+      renderGeneralLogs();
+      showToast(
+        "Mostrando bitácora general de hoy filtrada por eventos de login.",
+        "success"
+      );
+    });
+  }
+
+  const secGotoUsers = document.getElementById("sec-goto-users");
+  if (secGotoUsers) {
+    secGotoUsers.addEventListener("click", () => {
+      setAdminView("users");
+    });
+  }
+
+  const secGotoLogs = document.getElementById("sec-goto-logs");
+  if (secGotoLogs) {
+    secGotoLogs.addEventListener("click", () => {
+      const searchGeneral = document.getElementById("general-search");
+      if (searchGeneral) {
+        searchGeneral.value = "";
+      }
+      generalTodayOnly = false;
+      const btnToday = document.getElementById("btn-general-today");
+      if (btnToday) {
+        btnToday.classList.remove("is-active");
+      }
+      setAdminView("general");
+      generalPage = 1;
+      renderGeneralLogs();
+      showToast(
+        "Mostrando bitácora general para revisar eventos de seguridad.",
+        "success"
+      );
+    });
+  }
+
+  const settingsForm = document.getElementById("settings-security-form");
+  if (settingsForm) {
+    settingsForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!currentUser || currentUser.role !== "admin") {
+        showToast(
+          "Solo un administrador general puede modificar estas políticas.",
+          "error"
+        );
+        return;
+      }
+
+      const maxFailedInput = document.getElementById("settings-max-failed");
+      const lockWindowInput = document.getElementById("settings-lock-window");
+      const expiryInput = document.getElementById("settings-password-expiry");
+
+      const burstThresholdInput = document.getElementById(
+        "settings-alert-burst-threshold"
+      );
+      const burstWindowInput = document.getElementById(
+        "settings-alert-burst-window"
+      );
+      const criticalToggle = document.getElementById(
+        "settings-alert-critical-enabled"
+      );
+      const burstToggle = document.getElementById(
+        "settings-alert-burst-enabled"
+      );
+
+      const parsed = getSecuritySettingsFromState();
+
+      if (maxFailedInput) {
+        const v = parseInt(maxFailedInput.value, 10);
+        if (Number.isFinite(v) && v > 0 && v <= 20) {
+          parsed.maxFailedAttempts = v;
+        }
+      }
+      if (lockWindowInput) {
+        const v = parseInt(lockWindowInput.value, 10);
+        if (Number.isFinite(v) && v > 0 && v <= 120) {
+          parsed.lockWindowMinutes = v;
+        }
+      }
+      if (expiryInput) {
+        const v = parseInt(expiryInput.value, 10);
+        if (Number.isFinite(v) && v > 0 && v <= 365) {
+          parsed.passwordExpiryDays = v;
+        }
+      }
+
+      adminState.securitySettings = parsed;
+
+      const alertParsed = getAlertSettingsFromState();
+      if (burstThresholdInput) {
+        const v = parseInt(burstThresholdInput.value, 10);
+        if (Number.isFinite(v) && v >= 2 && v <= 50) {
+          alertParsed.stationBurstThreshold = v;
+        }
+      }
+      if (burstWindowInput) {
+        const v = parseInt(burstWindowInput.value, 10);
+        if (Number.isFinite(v) && v >= 15 && v <= 720) {
+          alertParsed.stationBurstWindowMinutes = v;
+        }
+      }
+      if (criticalToggle) {
+        alertParsed.enableCriticalAlerts = !!criticalToggle.checked;
+      }
+      if (burstToggle) {
+        alertParsed.enableStationBurstAlerts = !!burstToggle.checked;
+      }
+
+      adminState.alertSettings = alertParsed;
+      saveAdminState();
+      showToast(
+        "Políticas de seguridad y reglas de alertas actualizadas.",
+        "success"
+      );
+    });
+  }
+
+  const maintenanceForm = document.getElementById("maintenance-form");
+  const maintenanceClear = document.getElementById("maintenance-clear");
+  const maintenanceMonth = document.getElementById("maintenance-filter-month");
+  const maintenanceStatusFilter = document.getElementById(
+    "maintenance-filter-status"
+  );
+
+  if (maintenanceForm) {
+    maintenanceForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!currentUser || currentUser.role !== "admin") {
+        showToast(
+          "Solo un administrador general puede gestionar mantenimientos.",
+          "error"
+        );
+        return;
+      }
+
+      const idInput = document.getElementById("maintenance-id");
+      const stationSelect = document.getElementById("maintenance-station");
+      const dateInput = document.getElementById("maintenance-date");
+      const typeSelect = document.getElementById("maintenance-type");
+      const titleInput = document.getElementById("maintenance-title");
+      const statusSelect = document.getElementById("maintenance-status");
+      const notesInput = document.getElementById("maintenance-notes");
+
+      if (!stationSelect || !dateInput || !titleInput || !statusSelect) {
+        return;
+      }
+
+      const stationId = stationSelect.value || "";
+      const datePlanned = dateInput.value || "";
+      const title = titleInput.value.trim();
+      const type = typeSelect ? typeSelect.value || "preventivo" : "preventivo";
+      const status = statusSelect.value || "pendiente";
+      const notes = notesInput ? notesInput.value.trim() : "";
+
+      if (!stationId || !datePlanned || !title) {
+        showToast(
+          "Estación, fecha programada y título son obligatorios.",
+          "warning"
+        );
+        return;
+      }
+
+      if (!Array.isArray(adminState.maintenance)) {
+        adminState.maintenance = [];
+      }
+
+      const existingId = idInput && idInput.value ? Number(idInput.value) : 0;
+      const nowIso = new Date().toISOString();
+
+      if (existingId) {
+        const item = adminState.maintenance.find((m) => m.id === existingId);
+        if (item) {
+          item.stationId = stationId;
+          item.datePlanned = datePlanned;
+          item.title = title;
+          item.type = type;
+          item.status = status;
+          item.notes = notes;
+          item.updatedAt = nowIso;
+        }
+      } else {
+        const nextId =
+          adminState.maintenance.reduce(
+            (max, m) => Math.max(max, m.id || 0),
+            0
+          ) + 1;
+        adminState.maintenance.push({
+          id: nextId,
+          stationId,
+          datePlanned,
+          title,
+          type,
+          status,
+          notes,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      }
+
+      saveAdminState();
+      if (idInput) idInput.value = "";
+      maintenanceForm.reset();
+      hydrateMaintenanceStationSelect();
+      renderMaintenanceView();
+      showToast("Mantenimiento guardado.", "success");
+    });
+  }
+
+  if (maintenanceClear) {
+    maintenanceClear.addEventListener("click", () => {
+      const idInput = document.getElementById("maintenance-id");
+      if (idInput) idInput.value = "";
+      if (maintenanceForm) maintenanceForm.reset();
+      hydrateMaintenanceStationSelect();
+    });
+  }
+
+  const debouncedRenderMaintenance = debounce(renderMaintenanceView, 180);
+  if (maintenanceMonth) {
+    maintenanceMonth.addEventListener("change", debouncedRenderMaintenance);
+  }
+  if (maintenanceStatusFilter) {
+    maintenanceStatusFilter.addEventListener(
+      "change",
+      debouncedRenderMaintenance
+    );
+  }
+
   const searchLog = document.getElementById("log-search");
   const debouncedRenderLogs = debounce(renderLogs, 180);
   const debouncedRenderAlerts = debounce(() => {
@@ -4000,6 +3828,43 @@ function setupAdminEvents() {
   const debouncedRenderStations = debounce(renderStations, 180);
   if (searchLog) {
     searchLog.addEventListener("input", debouncedRenderLogs);
+  }
+
+  const btnLogsClear = document.getElementById("btn-logs-clear");
+  if (btnLogsClear) {
+    btnLogsClear.addEventListener("click", () => {
+      if (searchLog) searchLog.value = "";
+      [
+        document.getElementById("log-filter-station"),
+        document.getElementById("log-filter-status"),
+        document.getElementById("log-filter-frequency"),
+        document.getElementById("log-filter-fueltype"),
+        document.getElementById("log-filter-from"),
+        document.getElementById("log-filter-to"),
+        document.getElementById("log-filter-shift"),
+      ].forEach((el) => {
+        if (!el) return;
+        if (el.tagName === "SELECT") el.value = "";
+        else if (el.type === "date") el.value = "";
+      });
+
+      quickFilterOverdue = false;
+      quickFilterIncidents = false;
+      quickFilterLast7 = false;
+      quickFilterNoFollowUp = false;
+      quickFilterFuelDeliveries = false;
+      quickFilterEvidence = false;
+      quickFilterSentToAdmin = false;
+      quickFilterHighSeverity = false;
+      quickFilterEvidencePending = false;
+
+      document
+        .querySelectorAll(".admin-quick-filters .ghost-btn.is-active")
+        .forEach((btn) => btn.classList.remove("is-active"));
+
+      logPage = 1;
+      renderLogs();
+    });
   }
 
   const alertsSearch = document.getElementById("alerts-search");
@@ -4021,6 +3886,28 @@ function setupAdminEvents() {
     const evt = el.tagName === "SELECT" || el.type === "checkbox" ? "change" : "input";
     el.addEventListener(evt, debouncedRenderAlerts);
   });
+
+  const btnAlertsClear = document.getElementById("btn-alerts-clear");
+  if (btnAlertsClear) {
+    btnAlertsClear.addEventListener("click", () => {
+      if (alertsSearch) alertsSearch.value = "";
+      [
+        alertsStation,
+        alertsSeverity,
+        alertsFrom,
+        alertsTo,
+        alertsSent,
+      ].forEach((el) => {
+        if (!el) return;
+        if (el.tagName === "SELECT") el.value = "";
+        else if (el.type === "date") el.value = "";
+        else if (el.type === "checkbox") el.checked = false;
+      });
+
+      alertsPage = 1;
+      renderAlerts();
+    });
+  }
 
   const filterStation = document.getElementById("log-filter-station");
   const filterStatus = document.getElementById("log-filter-status");
@@ -4063,6 +3950,32 @@ function setupAdminEvents() {
   const searchGeneral = document.getElementById("general-search");
   if (searchGeneral) {
     searchGeneral.addEventListener("input", debouncedRenderGeneralLogs);
+  }
+
+  const btnGeneralToday = document.getElementById("btn-general-today");
+  if (btnGeneralToday) {
+    btnGeneralToday.addEventListener("click", () => {
+      generalTodayOnly = !generalTodayOnly;
+      if (generalTodayOnly) {
+        btnGeneralToday.classList.add("is-active");
+      } else {
+        btnGeneralToday.classList.remove("is-active");
+      }
+      generalPage = 1;
+      renderGeneralLogs();
+    });
+  }
+
+  const btnGeneralClear = document.getElementById("btn-general-clear");
+  if (btnGeneralClear) {
+    btnGeneralClear.addEventListener("click", () => {
+      if (searchGeneral) searchGeneral.value = "";
+      generalTodayOnly = false;
+      const todayBtn = document.getElementById("btn-general-today");
+      if (todayBtn) todayBtn.classList.remove("is-active");
+      generalPage = 1;
+      renderGeneralLogs();
+    });
   }
 
   const savedViewsSelect = document.getElementById("log-saved-view");
@@ -4615,6 +4528,21 @@ function setupAdminEvents() {
     });
   }
 
+  const exportUsersBtn = document.getElementById("btn-export-users");
+  if (exportUsersBtn) {
+    if (!can("exportLogs")) {
+      exportUsersBtn.style.display = "none";
+    } else {
+      exportUsersBtn.addEventListener("click", () => {
+        if (!can("exportLogs")) {
+          showToast("No tienes permisos para exportar usuarios.", "error");
+          return;
+        }
+        exportUsersCsv();
+      });
+    }
+  }
+
   const logPrev = document.getElementById("log-page-prev");
   const logNext = document.getElementById("log-page-next");
   if (logPrev) {
@@ -5069,9 +4997,24 @@ function setupAdminEvents() {
         );
         return;
       }
+      const todayIso = new Date().toISOString().slice(0, 10);
 
-      userRecord.password = newPassInput;
-      userRecord.passwordLastChanged = new Date().toISOString().slice(0, 10);
+      if (currentUser.role === "admin") {
+        // Administradores pueden cambiar su contraseña directamente
+        userRecord.password = newPassInput;
+        userRecord.passwordLastChanged = todayIso;
+      } else {
+        // Otros roles: registrar solicitud para aprobación de un administrador
+        userRecord.pendingPassword = newPassInput;
+        userRecord.pendingPasswordRequestedAt = todayIso;
+        userRecord.pendingPasswordStatus = "pendiente";
+
+        showToast(
+          "Solicitud de cambio de contraseña enviada. Un administrador debe aprobarla.",
+          "success"
+        );
+      }
+
       saveAdminState();
 
       document.getElementById("profile-current-password").value = "";
@@ -5101,7 +5044,9 @@ function setupAdminEvents() {
         console.warn("No se pudo refrescar la tabla de usuarios tras cambio de contraseña", e);
       }
 
-      showToast("Contraseña actualizada correctamente.");
+      if (currentUser.role === "admin") {
+        showToast("Contraseña actualizada correctamente.");
+      }
     });
   }
 
@@ -5150,7 +5095,7 @@ function setupAdminEvents() {
 
       const isCritical = status === "error" && severity === "alta";
 
-      adminState.logs.push({
+      const newLog = {
         id: nextId,
         stationId,
         user,
@@ -5171,9 +5116,17 @@ function setupAdminEvents() {
         createdByRole: creator.role || "",
         approvalStatus: isCritical ? "pendiente" : "",
         sentToAdmin,
-      });
+      };
+
+      adminState.logs.push(newLog);
 
       saveAdminState();
+      // Evaluar reglas de alerta para el nuevo registro
+      try {
+        createAlertsForLog(newLog);
+      } catch (e) {
+        // silencioso
+      }
       logForm.reset();
       logForm.classList.add("hidden");
       renderLogs();
@@ -5188,24 +5141,73 @@ function setupAdminEvents() {
     } else {
       stationForm.addEventListener("submit", (e) => {
         e.preventDefault();
+        const idInput = document.getElementById("station-id");
+        const existingId = idInput ? idInput.value.trim() : "";
         const name = document.getElementById("station-name").value.trim();
         const location = document
           .getElementById("station-location")
           .value.trim();
         const desc = document.getElementById("station-desc").value.trim();
+        const latStr = document.getElementById("station-lat").value.trim();
+        const lngStr = document.getElementById("station-lng").value.trim();
+        const yearFromStr = document
+          .getElementById("station-year-from")
+          .value.trim();
+        const yearToStr = document
+          .getElementById("station-year-to")
+          .value.trim();
 
         if (!name) return;
 
-        const id = `st${adminState.stations.length + 1}`;
-        adminState.stations.push({
-          id,
-          name,
-          location,
-          description: desc,
-          employees: [],
-        });
+        const lat = latStr ? Number(latStr) : null;
+        const lng = lngStr ? Number(lngStr) : null;
+        const yearFrom = yearFromStr ? Number(yearFromStr) : null;
+        const yearTo = yearToStr ? Number(yearToStr) : null;
+
+        let stationId = existingId;
+        const isEdit = !!existingId;
+
+        if (isEdit) {
+          const st = adminState.stations.find((s) => s.id === existingId);
+          if (st) {
+            st.name = name;
+            st.location = location;
+            st.description = desc;
+            st.lat = lat;
+            st.lng = lng;
+            st.yearFrom = yearFrom;
+            st.yearTo = yearTo;
+          } else {
+            stationId = "";
+          }
+        }
+
+        if (!stationId) {
+          stationId = `st${adminState.stations.length + 1}`;
+          adminState.stations.push({
+            id: stationId,
+            name,
+            location,
+            description: desc,
+            employees: [],
+            lat,
+            lng,
+            yearFrom,
+            yearTo,
+            active: true,
+          });
+        }
 
         saveAdminState();
+
+        // Dejar marcada la estación recién creada/actualizada
+        stationsHighlightId = stationId;
+        stationsEditingId = "";
+
+        if (idInput) idInput.value = "";
+        const submitBtn = stationForm.querySelector("button[type='submit']");
+        if (submitBtn) submitBtn.textContent = "Generar";
+
         stationForm.reset();
         renderStations();
         hydrateLogStationSelect();
@@ -5225,10 +5227,17 @@ function setupAdminEvents() {
           });
         }
 
-        addGeneralLogEntry(
-          "Alta de estacion",
-          `Se creó la estación ${name} (ID: ${id}).`
-        );
+        if (isEdit) {
+          addGeneralLogEntry(
+            "Edicion de estacion",
+            `Se actualizó la estación ${name} (ID: ${stationId}).`
+          );
+        } else {
+          addGeneralLogEntry(
+            "Alta de estacion",
+            `Se creó la estación ${name} (ID: ${stationId}).`
+          );
+        }
       });
     }
   }
@@ -5236,6 +5245,15 @@ function setupAdminEvents() {
   if (stationClear && can("manageStations")) {
     stationClear.addEventListener("click", () => {
       stationForm.reset();
+      stationsEditingId = "";
+      stationsHighlightId = "";
+      const idInput = document.getElementById("station-id");
+      if (idInput) idInput.value = "";
+      const submitBtn = stationForm.querySelector("button[type='submit']");
+      if (submitBtn) submitBtn.textContent = "Generar";
+      document
+        .querySelectorAll(".admin-station-card")
+        .forEach((c) => c.classList.remove("is-editing", "is-highlighted"));
     });
   }
 
@@ -5300,6 +5318,66 @@ function setupAdminEvents() {
     });
   }
 
+  const usersSearch = document.getElementById("users-search");
+  const usersRoleFilter = document.getElementById("users-filter-role");
+  if (usersSearch) {
+    usersSearch.addEventListener("input", () => {
+      usersPage = 1;
+      renderUsers();
+    });
+  }
+  if (usersRoleFilter) {
+    usersRoleFilter.addEventListener("change", () => {
+      usersPage = 1;
+      renderUsers();
+    });
+  }
+
+  const quickForm = document.getElementById("user-quick-edit-form");
+  if (quickForm) {
+    quickForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const idStr = quickForm.dataset.userId;
+      const id = idStr ? Number(idStr) : NaN;
+      if (!id || Number.isNaN(id)) {
+        showToast("No se pudo identificar al usuario a actualizar.", "error");
+        return;
+      }
+
+      const user = adminState.users.find((u) => u.id === id);
+      if (!user) {
+        showToast("El usuario ya no existe en el estado actual.", "error");
+        return;
+      }
+
+      const roleSel = document.getElementById("user-quick-role");
+      const stationSel = document.getElementById("user-quick-station");
+      const areaInput = document.getElementById("user-quick-area");
+
+      const newRole = roleSel ? roleSel.value : user.role;
+      const newStationId = stationSel ? stationSel.value : user.stationId;
+      const newArea = areaInput ? areaInput.value.trim() : user.area;
+
+      user.role = newRole || user.role;
+      user.stationId = newStationId || "";
+      user.area = newArea;
+
+      saveAdminState();
+      renderUsers();
+      showUserSummary(user);
+
+      addGeneralLogEntry(
+        "Edición rápida de usuario",
+        `Se actualizaron rol/estación/área del usuario ${user.username ||
+          user.name ||
+          ""}.`,
+        "ok"
+      );
+
+      showToast("Usuario actualizado.", "success");
+    });
+  }
+
   const resetUserPwdBtn = document.getElementById(
     "btn-user-reset-password"
   );
@@ -5337,7 +5415,32 @@ function setupAdminEvents() {
 
       user.password = newPassword;
       user.passwordLastChanged = new Date().toISOString();
+      // Si estaba bloqueado, al resetear contraseña también se desbloquea
+      user.locked = false;
+      user.lockedAt = null;
       saveAdminState();
+
+      // Limpiar intentos de login almacenados para este usuario
+      try {
+        const rawAttempts = window.localStorage.getItem(LOGIN_ATTEMPTS_KEY);
+        if (rawAttempts) {
+          const map = JSON.parse(rawAttempts) || {};
+          const key = (user.username || "").toLowerCase();
+          if (key && map[key]) {
+            delete map[key];
+            window.localStorage.setItem(
+              LOGIN_ATTEMPTS_KEY,
+              JSON.stringify(map)
+            );
+          }
+        }
+      } catch (e) {
+        console.error(
+          "No se pudo limpiar el historial de intentos de login tras resetear contraseña",
+          e
+        );
+      }
+
       renderUsers();
 
       addGeneralLogEntry(
@@ -5349,7 +5452,266 @@ function setupAdminEvents() {
       );
 
       showToast(
-        `Contraseña reseteada. Nueva contraseña: ${newPassword}`,
+        `Contraseña reseteada y cuenta desbloqueada. Nueva contraseña: ${newPassword}`,
+        "success"
+      );
+    });
+  }
+
+  const approvePwdBtn = document.getElementById("btn-user-approve-pwd");
+  if (approvePwdBtn) {
+    approvePwdBtn.addEventListener("click", () => {
+      const selectedRow = document.querySelector(
+        "#users-table tbody tr.is-selected"
+      );
+      if (!selectedRow) {
+        showToast(
+          "Selecciona un usuario que tenga una solicitud de cambio de contraseña.",
+          "warning"
+        );
+        return;
+      }
+
+      const idStr = selectedRow.dataset.userId;
+      const id = idStr ? Number(idStr) : NaN;
+      if (!id || Number.isNaN(id)) {
+        showToast("No se pudo identificar al usuario seleccionado.", "error");
+        return;
+      }
+
+      const user = adminState.users.find((u) => u.id === id);
+      if (!user) {
+        showToast("No se encontró el usuario en el estado actual.", "error");
+        return;
+      }
+
+      if (!user.pendingPassword) {
+        showToast("El usuario no tiene una solicitud de cambio de contraseña pendiente.", "warning");
+        return;
+      }
+
+      user.password = user.pendingPassword;
+      user.passwordLastChanged = new Date().toISOString().slice(0, 10);
+      user.pendingPasswordStatus = "aprobada";
+      user.pendingPasswordApprovedAt = new Date().toISOString();
+      delete user.pendingPassword;
+
+      saveAdminState();
+      renderUsers();
+
+      addGeneralLogEntry(
+        "Aprobación de cambio de contraseña",
+        `Se aprobó el cambio de contraseña del usuario ${user.username ||
+          user.name || ""}.`,
+        "ok"
+      );
+
+      showToast("Cambio de contraseña aprobado.", "success");
+    });
+  }
+
+  const rejectPwdBtn = document.getElementById("btn-user-reject-pwd");
+  if (rejectPwdBtn) {
+    rejectPwdBtn.addEventListener("click", () => {
+      const selectedRow = document.querySelector(
+        "#users-table tbody tr.is-selected"
+      );
+      if (!selectedRow) {
+        showToast(
+          "Selecciona un usuario que tenga una solicitud de cambio de contraseña.",
+          "warning"
+        );
+        return;
+      }
+
+      const idStr = selectedRow.dataset.userId;
+      const id = idStr ? Number(idStr) : NaN;
+      if (!id || Number.isNaN(id)) {
+        showToast("No se pudo identificar al usuario seleccionado.", "error");
+        return;
+      }
+
+      const user = adminState.users.find((u) => u.id === id);
+      if (!user) {
+        showToast("No se encontró el usuario en el estado actual.", "error");
+        return;
+      }
+
+      if (!user.pendingPassword) {
+        showToast("El usuario no tiene una solicitud de cambio de contraseña pendiente.", "warning");
+        return;
+      }
+
+      user.pendingPasswordStatus = "rechazada";
+      user.pendingPasswordRejectedAt = new Date().toISOString();
+      delete user.pendingPassword;
+
+      saveAdminState();
+      renderUsers();
+
+      addGeneralLogEntry(
+        "Rechazo de cambio de contraseña",
+        `Se rechazó la solicitud de cambio de contraseña del usuario ${
+          user.username || user.name || ""
+        }.`,
+        "warning"
+      );
+
+      showToast("Solicitud de cambio de contraseña rechazada.", "success");
+    });
+  }
+
+  const lockUserBtn = document.getElementById("btn-user-lock");
+  if (lockUserBtn) {
+    lockUserBtn.addEventListener("click", () => {
+      const selectedRow = document.querySelector(
+        "#users-table tbody tr.is-selected"
+      );
+      if (!selectedRow) {
+        showToast(
+          "Selecciona un usuario en la tabla para bloquearlo.",
+          "warning"
+        );
+        return;
+      }
+
+      const idStr = selectedRow.dataset.userId;
+      const id = idStr ? Number(idStr) : NaN;
+      if (!id || Number.isNaN(id)) {
+        showToast("No se pudo identificar al usuario seleccionado.", "error");
+        return;
+      }
+
+      const user = adminState.users.find((u) => u.id === id);
+      if (!user) {
+        showToast("No se encontró el usuario en el estado actual.", "error");
+        return;
+      }
+
+      // Proteger al usuario maestro misa de bloqueos manuales
+      const uname = (user.username || "").toLowerCase();
+      if (uname === "misa" && user.role === "admin") {
+        showToast(
+          "No puedes bloquear al usuario maestro misa.",
+          "warning"
+        );
+        return;
+      }
+
+      if (user.locked) {
+        showToast("El usuario ya está bloqueado.", "warning");
+        return;
+      }
+
+      user.locked = true;
+      user.lockedAt = new Date().toISOString();
+      saveAdminState();
+
+      // Opcional: limpiar intentos previos para que el estado dependa solo de 'locked'
+      try {
+        const rawAttempts = window.localStorage.getItem(LOGIN_ATTEMPTS_KEY);
+        if (rawAttempts) {
+          const map = JSON.parse(rawAttempts) || {};
+          const key = uname;
+          if (key && map[key]) {
+            delete map[key];
+            window.localStorage.setItem(
+              LOGIN_ATTEMPTS_KEY,
+              JSON.stringify(map)
+            );
+          }
+        }
+      } catch (e) {
+        console.error(
+          "No se pudo limpiar el historial de intentos de login del usuario bloqueado manualmente",
+          e
+        );
+      }
+
+      renderUsers();
+      showUserSummary(user);
+
+      addGeneralLogEntry(
+        "Bloqueo manual de usuario",
+        `Se bloqueó manualmente el usuario ${user.username || user.name || ""}.`,
+        "warning"
+      );
+
+      showToast(
+        "Usuario bloqueado. No podrá iniciar sesión hasta ser desbloqueado.",
+        "success"
+      );
+    });
+  }
+
+  const unlockUserBtn = document.getElementById("btn-user-unlock");
+  if (unlockUserBtn) {
+    unlockUserBtn.addEventListener("click", () => {
+      const selectedRow = document.querySelector(
+        "#users-table tbody tr.is-selected"
+      );
+      if (!selectedRow) {
+        showToast(
+          "Selecciona un usuario en la tabla para desbloquearlo.",
+          "warning"
+        );
+        return;
+      }
+
+      const idStr = selectedRow.dataset.userId;
+      const id = idStr ? Number(idStr) : NaN;
+      if (!id || Number.isNaN(id)) {
+        showToast("No se pudo identificar al usuario seleccionado.", "error");
+        return;
+      }
+
+      const user = adminState.users.find((u) => u.id === id);
+      if (!user) {
+        showToast("No se encontró el usuario en el estado actual.", "error");
+        return;
+      }
+
+      if (!user.locked) {
+        showToast("El usuario no está bloqueado.", "warning");
+        return;
+      }
+
+      user.locked = false;
+      user.lockedAt = null;
+      saveAdminState();
+
+      // Limpiar intentos de login almacenados para este usuario
+      try {
+        const rawAttempts = window.localStorage.getItem(LOGIN_ATTEMPTS_KEY);
+        if (rawAttempts) {
+          const map = JSON.parse(rawAttempts) || {};
+          const key = (user.username || "").toLowerCase();
+          if (key && map[key]) {
+            delete map[key];
+            window.localStorage.setItem(
+              LOGIN_ATTEMPTS_KEY,
+              JSON.stringify(map)
+            );
+          }
+        }
+      } catch (e) {
+        console.error(
+          "No se pudo limpiar el historial de intentos de login del usuario desbloqueado",
+          e
+        );
+      }
+
+      renderUsers();
+      showUserSummary(user);
+
+      addGeneralLogEntry(
+        "Desbloqueo de usuario",
+        `Se desbloqueó el usuario ${user.username || user.name || ""}.`,
+        "ok"
+      );
+
+      showToast(
+        "Usuario desbloqueado. Ya puede intentar iniciar sesión nuevamente.",
         "success"
       );
     });
@@ -5457,6 +5819,9 @@ function hydrateLogStationSelect() {
     stationsSource = stationsSource.filter((s) => s.id === assignedStationId);
   }
 
+  // Para creación de registros, solo estaciones activas
+  stationsSource = stationsSource.filter((s) => s.active !== false);
+
   stationsSource.forEach((st) => {
     const opt = document.createElement("option");
     opt.value = st.id;
@@ -5523,6 +5888,31 @@ function hydrateShiftStationSelect() {
   if (isStationScoped && assignedStationId) {
     stationsSource = stationsSource.filter((s) => s.id === assignedStationId);
   }
+
+   // Para nuevos turnos, solo estaciones activas
+  stationsSource = stationsSource.filter((s) => s.active !== false);
+
+  stationsSource.forEach((st) => {
+    const opt = document.createElement("option");
+    opt.value = st.id;
+    opt.textContent = st.name;
+    select.appendChild(opt);
+  });
+}
+
+function hydrateMaintenanceStationSelect() {
+  const select = document.getElementById("maintenance-station");
+  if (!select) return;
+
+  select.innerHTML = "";
+
+  let stationsSource = [...adminState.stations];
+  const isStationScoped = currentUser && currentUser.role === "jefe_estacion";
+  if (isStationScoped && assignedStationId) {
+    stationsSource = stationsSource.filter((s) => s.id === assignedStationId);
+  }
+
+  stationsSource = stationsSource.filter((s) => s.active !== false);
 
   stationsSource.forEach((st) => {
     const opt = document.createElement("option");
@@ -5641,6 +6031,8 @@ function renderMonthlyReport() {
   const incidentTypeStats = {};
   const stationIncidentStats = {};
   const shiftStats = {};
+  const userStats = {};
+  const stationStats = {};
 
   tbody.innerHTML = "";
   if (areaTbody) areaTbody.innerHTML = "";
@@ -5803,6 +6195,49 @@ function renderMonthlyReport() {
       sStats.incidents += 1;
     }
 
+    const userKey = log.user || "Sin usuario";
+    if (!userStats[userKey]) {
+      userStats[userKey] = {
+        total: 0,
+        ok: 0,
+        warning: 0,
+        error: 0,
+        incidents: 0,
+      };
+    }
+    const uStats = userStats[userKey];
+    uStats.total += 1;
+    if (log.status === "ok") uStats.ok += 1;
+    if (log.status === "warning") uStats.warning += 1;
+    if (log.status === "error") uStats.error += 1;
+    if (log.status === "warning" || log.status === "error") {
+      uStats.incidents += 1;
+    }
+
+    const stationObjForStats = adminState.stations.find(
+      (s) => s.id === log.stationId
+    );
+    const stationNameKey = stationObjForStats
+      ? stationObjForStats.name
+      : "Sin estación";
+    if (!stationStats[stationNameKey]) {
+      stationStats[stationNameKey] = {
+        total: 0,
+        ok: 0,
+        warning: 0,
+        error: 0,
+        incidents: 0,
+      };
+    }
+    const stStats = stationStats[stationNameKey];
+    stStats.total += 1;
+    if (log.status === "ok") stStats.ok += 1;
+    if (log.status === "warning") stStats.warning += 1;
+    if (log.status === "error") stStats.error += 1;
+    if (log.status === "warning" || log.status === "error") {
+      stStats.incidents += 1;
+    }
+
     const tr = document.createElement("tr");
     const station = adminState.stations.find((s) => s.id === log.stationId);
 
@@ -5891,6 +6326,7 @@ function renderMonthlyReport() {
   const trendEl = document.getElementById("report-trend-text");
   const fuelCountEl = document.getElementById("report-fuel-deliveries");
   const fuelLitersEl = document.getElementById("report-fuel-liters");
+  const comparativeEl = document.getElementById("report-comparative-text");
 
   if (totalEl) totalEl.textContent = String(total);
   if (okEl) okEl.textContent = String(okCount);
@@ -5906,6 +6342,35 @@ function renderMonthlyReport() {
       fuelLitersTotal > 0
         ? `${fuelLitersTotal.toLocaleString("es-MX")} L`
         : "0 L";
+
+  if (comparativeEl) {
+    try {
+      const topStation = stationStatsArray
+        .slice()
+        .sort((a, b) => b.incidents - a.incidents)[0];
+      const topUser = userStatsArray
+        .slice()
+        .sort((a, b) => b.incidents - a.incidents)[0];
+
+      if (!monthValue || (!topStation && !topUser)) {
+        comparativeEl.textContent = "";
+      } else {
+        const stationLabel = topStation
+          ? `${topStation.station} (${topStation.incidents} incidentes)`
+          : "sin datos";
+        const userLabel = topUser
+          ? `${topUser.user} (${topUser.incidents} incidentes)`
+          : "sin datos";
+        comparativeEl.textContent =
+          "Mayor incidencia por estación: " +
+          stationLabel +
+          " · Mayor incidencia por usuario: " +
+          userLabel;
+      }
+    } catch (e) {
+      comparativeEl.textContent = "";
+    }
+  }
 
   if (fuelTbody) {
     if (!fuelRows.length) {
@@ -5961,9 +6426,8 @@ function renderMonthlyReport() {
             fuelSpan.classList.add("badge-fuel-diesel");
           }
           fuelSpan.textContent = fuelType || "";
-          fuelTd.appendChild(fuelSpan);
-          tr.appendChild(fuelTd);
-              if (fuelTypeSelect && f.fuelType) fuelTypeSelect.value = f.fuelType;
+            fuelTd.appendChild(fuelSpan);
+            tr.appendChild(fuelTd);
 
           // Columna de litros
           const litersTd = document.createElement("td");
@@ -6380,6 +6844,26 @@ function renderMonthlyReport() {
     }
   }
 
+  const userStatsArray = Object.entries(userStats).map(([user, stats]) => ({
+    user,
+    total: stats.total,
+    ok: stats.ok,
+    warning: stats.warning,
+    error: stats.error,
+    incidents: stats.incidents,
+  }));
+
+  const stationStatsArray = Object.entries(stationStats).map(
+    ([station, stats]) => ({
+      station,
+      total: stats.total,
+      ok: stats.ok,
+      warning: stats.warning,
+      error: stats.error,
+      incidents: stats.incidents,
+    })
+  );
+
   // Guardar en memoria las filas del reporte para exportación CSV
   window.__cogMonthlyReportExport = {
     filters: {
@@ -6390,6 +6874,8 @@ function renderMonthlyReport() {
     rows: exportRows,
     fuelRows,
     fuelTypeStats,
+    userStats: userStatsArray,
+    stationStats: stationStatsArray,
     totals: {
       total,
       okCount,
@@ -6416,7 +6902,15 @@ function exportMonthlyReportCsv() {
       return;
     }
 
-    const { filters, rows, fuelRows, fuelTypeStats, totals } = snapshot;
+    const {
+      filters,
+      rows,
+      fuelRows,
+      fuelTypeStats,
+      totals,
+      userStats,
+      stationStats,
+    } = snapshot;
 
     if (!rows.length && (!fuelRows || !fuelRows.length)) {
       showToast(
@@ -6517,6 +7011,46 @@ function exportMonthlyReportCsv() {
       lines.push("");
     }
 
+    if (userStats && userStats.length) {
+      lines.push("Resumen por usuario (mes seleccionado)");
+      lines.push(
+        "Usuario,Registros totales,Incidentes,OK,Advertencia,Error"
+      );
+      userStats.forEach((u) => {
+        lines.push(
+          [
+            `"${u.user}"`,
+            u.total,
+            u.incidents,
+            u.ok,
+            u.warning,
+            u.error,
+          ].join(",")
+        );
+      });
+      lines.push("");
+    }
+
+    if (stationStats && stationStats.length) {
+      lines.push("Resumen por estacion (mes seleccionado)");
+      lines.push(
+        "Estacion,Registros totales,Incidentes,OK,Advertencia,Error"
+      );
+      stationStats.forEach((s) => {
+        lines.push(
+          [
+            `"${s.station}"`,
+            s.total,
+            s.incidents,
+            s.ok,
+            s.warning,
+            s.error,
+          ].join(",")
+        );
+      });
+      lines.push("");
+    }
+
     const csvContent = lines.join("\r\n");
     const blob = new Blob([csvContent], {
       type: "text/csv;charset=utf-8;",
@@ -6568,6 +7102,60 @@ function performGlobalSearch() {
   if (stationSearch) {
     stationSearch.value = query;
   }
+
+  // Resumen rápido de coincidencias por tipo
+  try {
+    const q = query;
+    const logs = Array.isArray(adminState.logs) ? adminState.logs : [];
+    const users = Array.isArray(adminState.users) ? adminState.users : [];
+    const stations = Array.isArray(adminState.stations)
+      ? adminState.stations
+      : [];
+    const general = Array.isArray(adminState.generalLogs)
+      ? adminState.generalLogs
+      : [];
+
+    const matchesLogs = logs.filter((l) => {
+      const txt = `${l.user || ""} ${l.description || ""} ${
+        l.incidentType || ""
+      }`.toLowerCase();
+      return txt.includes(q);
+    }).length;
+
+    const matchesUsers = users.filter((u) => {
+      const txt = `${u.username || ""} ${u.name || ""} ${
+        u.area || ""
+      }`.toLowerCase();
+      return txt.includes(q);
+    }).length;
+
+    const matchesStations = stations.filter((s) => {
+      const txt = `${s.name || ""} ${s.location || ""}`.toLowerCase();
+      return txt.includes(q);
+    }).length;
+
+    const matchesGeneral = general.filter((g) => {
+      const txt = `${g.user || ""} ${g.activity || ""} ${
+        g.description || ""
+      }`.toLowerCase();
+      return txt.includes(q);
+    }).length;
+
+    const summaryEl = document.getElementById("global-search-summary");
+    if (summaryEl) {
+      summaryEl.textContent =
+        "Coincidencias — Registros: " +
+        matchesLogs +
+        " · Usuarios: " +
+        matchesUsers +
+        " · Estaciones: " +
+        matchesStations +
+        " · Bitácora: " +
+        matchesGeneral;
+    }
+  } catch (e) {
+    // silencioso
+  }
 }
 
 function hydrateUserStationSelect() {
@@ -6581,7 +7169,10 @@ function hydrateUserStationSelect() {
   defaultOpt.textContent = "Sin estación";
   select.appendChild(defaultOpt);
 
-  adminState.stations.forEach((st) => {
+  // Para alta de usuarios, solo estaciones activas
+  (adminState.stations || [])
+    .filter((st) => st.active !== false)
+    .forEach((st) => {
     const opt = document.createElement("option");
     opt.value = st.id;
     opt.textContent = st.name;
@@ -6636,6 +7227,138 @@ function getInitialsForName(name) {
     .map((n) => n[0])
     .join("")
     .toUpperCase();
+}
+
+// --- Mapa global de estaciones (globo 3D) ---
+
+let stationsGlobeInstance = null;
+
+function buildStationsGlobeData() {
+  const points = [];
+
+  (adminState.stations || []).forEach((st) => {
+    if (typeof st.lat !== "number" || typeof st.lng !== "number") return;
+
+    const jefe = (adminState.users || []).find(
+      (u) => u.role === "jefe_estacion" && u.stationId === st.id
+    );
+
+    points.push({
+      lat: st.lat,
+      lng: st.lng,
+      stationId: st.id,
+      name: st.name,
+      location: st.location || "",
+      jefeName: jefe ? jefe.name : "Sin jefe asignado",
+      jefeUsername: jefe ? jefe.username : "",
+      yearFrom: st.yearFrom || null,
+      yearTo: st.yearTo || null,
+    });
+  });
+
+  return points;
+}
+
+function renderStationsGlobeDetails(point) {
+  const detailsEl = document.getElementById("stations-globe-details");
+  if (!detailsEl || !point) return;
+
+  const years = [];
+  if (point.yearFrom) years.push(`Desde ${point.yearFrom}`);
+  if (point.yearTo) years.push(`Hasta ${point.yearTo}`);
+  const yearsText = years.join(" · ");
+
+  const jefeLabel = point.jefeUsername
+    ? `${point.jefeName} (${point.jefeUsername})`
+    : point.jefeName;
+
+  detailsEl.dataset.stationId = point.stationId || "";
+
+  detailsEl.innerHTML = `
+    <dl class="stations-globe-details">
+      <dt>Estación</dt>
+      <dd>${point.name}</dd>
+      <dt>Ubicación</dt>
+      <dd>${point.location || "Sin ubicación"}</dd>
+      <dt>Jefe de estación</dt>
+      <dd>${jefeLabel}</dd>
+      <dt>Operación</dt>
+      <dd>${yearsText || "Sin datos de años"}</dd>
+      <dt>Coordenadas</dt>
+      <dd>${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}</dd>
+    </dl>
+    <div class="stations-globe-actions">
+      <button type="button" class="ghost-btn" data-action="open-station">Ver estación</button>
+      <button type="button" class="ghost-btn" data-action="open-logs">Ver bitácora</button>
+    </div>
+  `;
+}
+
+function initStationsGlobe() {
+  const container = document.getElementById("stations-globe");
+  if (!container) return;
+  if (typeof Globe === "undefined") {
+    console.warn("Globe.js no está disponible");
+    return;
+  }
+
+  const data = buildStationsGlobeData();
+
+  if (!stationsGlobeInstance) {
+    stationsGlobeInstance = Globe()(container)
+      .backgroundColor("rgba(0,0,0,0)")
+      .globeImageUrl("https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg")
+      .bumpImageUrl("https://unpkg.com/three-globe/example/img/earth-topology.png")
+      .showAtmosphere(true)
+      .atmosphereColor("#38bdf8")
+      .atmosphereAltitude(0.15)
+      .pointAltitude(0.02)
+      .pointRadius(0.3)
+      .pointColor(() => "#22c55e")
+      .pointsData(data)
+      .pointLat("lat")
+      .pointLng("lng")
+      .pointLabel((d) => d.name || "Estación");
+
+    stationsGlobeInstance.onPointClick((p) => {
+      renderStationsGlobeDetails(p);
+    });
+
+    stationsGlobeInstance.pointOfView({ lat: 23, lng: -102, altitude: 2.0 }, 1000);
+  } else {
+    stationsGlobeInstance.pointsData(data);
+  }
+
+  const sidebar = document.getElementById("stations-globe-sidebar");
+  if (sidebar && !sidebar.dataset.wired) {
+    sidebar.dataset.wired = "1";
+    sidebar.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-action]");
+      if (!btn) return;
+
+      const detailsEl = document.getElementById("stations-globe-details");
+      if (!detailsEl) return;
+      const stationId = detailsEl.dataset.stationId || "";
+      if (!stationId) return;
+
+      const action = btn.dataset.action;
+      if (action === "open-station") {
+        stationsHighlightId = stationId;
+        setAdminView("stations");
+      } else if (action === "open-logs") {
+        pendingLogStationFilterId = stationId;
+        setAdminView("logs");
+      }
+    });
+  }
+
+  if (!data.length) {
+    const detailsEl = document.getElementById("stations-globe-details");
+    if (detailsEl) {
+      detailsEl.innerHTML =
+        '<p class="admin-empty-row-text">No hay estaciones con coordenadas configuradas. Agrega latitud y longitud en el formulario de estaciones.</p>';
+    }
+  }
 }
 
 function renderProfileView() {
@@ -7097,10 +7820,27 @@ function renderDashboard() {
   const summaryTasksPendingEl = document.getElementById("summary-tasks-pending");
   const summaryTasksEvidenceEl = document.getElementById("summary-tasks-evidence");
   const summaryTasksNotesEl = document.getElementById("summary-tasks-notes");
+  const summaryTasksRiskEl = document.getElementById("summary-tasks-risk");
   const fuelRiskEl = document.getElementById("dash-fuel-risk");
   const fuelRiskSubEl = document.getElementById("dash-fuel-risk-sub");
   const shiftsSummaryEl = document.getElementById("dash-shifts-summary");
   const shiftsFuelEl = document.getElementById("dash-shifts-fuel");
+  const healthBackendEl = document.getElementById("dash-health-backend");
+  const healthAdminSyncEl = document.getElementById("dash-health-admin-sync");
+  const healthOpsSyncEl = document.getElementById("dash-health-ops-sync");
+  const healthDataSizeEl = document.getElementById("dash-health-data-size");
+  const securityLoginFailsEl = document.getElementById(
+    "dash-security-login-fails"
+  );
+  const securityLoginSubEl = document.getElementById(
+    "dash-security-login-sub"
+  );
+  const securityPassExpiredEl = document.getElementById(
+    "dash-security-password-expired"
+  );
+  const securityLoginListEl = document.getElementById(
+    "dash-security-login-list"
+  );
 
   if (!stationNameEl || !stationLocEl || !salesEl || !litersEl) return;
 
@@ -7356,6 +8096,7 @@ function renderDashboard() {
   let pendingTasks = 0;
   let tasksWithEvidence = 0;
   let tasksWithNotes = 0;
+  let riskTasksCount = 0;
   let criticalTasks = [];
   try {
     const rawOps = window.localStorage.getItem("cog-work-log-data");
@@ -7386,14 +8127,45 @@ function renderDashboard() {
         (t) => t.notes && String(t.notes).trim() !== ""
       ).length;
 
-      // Seleccionar próximas tareas críticas (prioridad alta o próximas fechas)
+      // Seleccionar próximas tareas críticas (vencidas, de hoy o de mañana si son alta prioridad)
       criticalTasks = scopedTasks
         .filter(function (t) {
-          var pr = (t && t.priority) || "";
-          if (pr.toLowerCase && pr.toLowerCase() === "alta") return true;
-          // Considerar también tareas próximas aunque no sean alta
-          var due = (t && t.dueDate) || "";
-          return !!due;
+          if (!t || !t.dueDate) return false;
+          var pr = (t.priority || "").toLowerCase ? t.priority.toLowerCase() : t.priority;
+          var today = new Date();
+          var todayMid = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate(),
+            0,
+            0,
+            0,
+            0
+          );
+          var parts = String(t.dueDate).split("-");
+          if (parts.length !== 3) return false;
+          var due = new Date(
+            Number(parts[0]),
+            Number(parts[1]) - 1,
+            Number(parts[2]),
+            0,
+            0,
+            0,
+            0
+          );
+          if (isNaN(due.getTime())) return false;
+          var diffMs = due.getTime() - todayMid.getTime();
+          var diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+          var isOverdue = diffDays < 0;
+          var isToday = diffDays === 0;
+          var isTomorrowHigh = diffDays === 1 && pr === "alta";
+          var isHigh = pr === "alta";
+          var isRisk = isOverdue || isToday || isTomorrowHigh;
+          if (isRisk) {
+            riskTasksCount += 1;
+          }
+          return isOverdue || isToday || isTomorrowHigh || isHigh;
         })
         .sort(function (a, b) {
           var aKey = ((a && a.dueDate) || "9999-12-31") + "T" + ((a && a.dueTime) || "23:59");
@@ -7424,6 +8196,203 @@ function renderDashboard() {
   if (summaryTasksNotesEl) {
     const valueSpan = summaryTasksNotesEl.querySelector(".admin-summary-value");
     if (valueSpan) valueSpan.textContent = String(tasksWithNotes);
+  }
+  if (summaryTasksRiskEl) {
+    const valueSpan = summaryTasksRiskEl.querySelector(".admin-summary-value");
+    if (valueSpan) valueSpan.textContent = String(riskTasksCount);
+  }
+
+  // Salud del sistema
+  if (healthBackendEl) {
+    if (adminLastBackendStatus === "online") {
+      healthBackendEl.textContent = "Servidor: en línea";
+    } else if (adminLastBackendStatus === "offline") {
+      healthBackendEl.textContent = "Servidor: sin conexión";
+    } else {
+      healthBackendEl.textContent = "Servidor: sin comprobar";
+    }
+  }
+
+  if (healthAdminSyncEl) {
+    try {
+      const raw = window.localStorage.getItem(ADMIN_LAST_SYNC_KEY);
+      if (raw) {
+        const d = new Date(raw);
+        if (!isNaN(d.getTime())) {
+          const dateStr = d.toLocaleDateString("es-MX", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          });
+          const timeStr = d.toLocaleTimeString("es-MX", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          healthAdminSyncEl.textContent = `Última sync administración: ${dateStr} ${timeStr}`;
+        } else {
+          healthAdminSyncEl.textContent = "Última sync administración: nunca";
+        }
+      } else {
+        healthAdminSyncEl.textContent = "Última sync administración: nunca";
+      }
+    } catch (e) {
+      healthAdminSyncEl.textContent = "Última sync administración: -";
+    }
+  }
+
+  if (healthOpsSyncEl) {
+    try {
+      const raw = window.localStorage.getItem("cog-work-log-ops-last-sync");
+      if (raw) {
+        const d = new Date(raw);
+        if (!isNaN(d.getTime())) {
+          const dateStr = d.toLocaleDateString("es-MX", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          });
+          const timeStr = d.toLocaleTimeString("es-MX", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          healthOpsSyncEl.textContent = `Última sync operaciones: ${dateStr} ${timeStr}`;
+        } else {
+          healthOpsSyncEl.textContent = "Última sync operaciones: nunca";
+        }
+      } else {
+        healthOpsSyncEl.textContent = "Última sync operaciones: nunca";
+      }
+    } catch (e) {
+      healthOpsSyncEl.textContent = "Última sync operaciones: -";
+    }
+  }
+
+  if (healthDataSizeEl) {
+    try {
+      const adminRaw = window.localStorage.getItem(ADMIN_STORAGE_KEY) || "";
+      const opsRaw = window.localStorage.getItem(OPERATIONS_STORAGE_KEY) || "";
+      const totalBytes = adminRaw.length + opsRaw.length;
+      const kb = totalBytes / 1024;
+      const mb = kb / 1024;
+      let label;
+      if (mb >= 1) {
+        label = `${mb.toFixed(2)} MB`;
+      } else {
+        label = `${kb.toFixed(1)} KB`;
+      }
+      healthDataSizeEl.textContent = `Tamaño aproximado de datos: ${label}`;
+    } catch (e) {
+      healthDataSizeEl.textContent = "Tamaño aproximado de datos: -";
+    }
+  }
+
+  // Panel rápido de seguridad: intentos de acceso fallidos (últimas 24 h), detalle reciente y contraseñas vencidas
+  try {
+    if (
+      securityLoginFailsEl ||
+      securityLoginSubEl ||
+      securityPassExpiredEl ||
+      securityLoginListEl
+    ) {
+      const generalLogs = Array.isArray(adminState.generalLogs)
+        ? adminState.generalLogs
+        : [];
+      const now = new Date();
+      const thresholdMs = now.getTime() - 24 * 60 * 60 * 1000;
+      let failedLoginsLast24h = 0;
+      const failedRecent = [];
+
+      generalLogs.forEach((g) => {
+        if (!g || !g.date) return;
+        const time = g.time || "00:00";
+        const dt = new Date(`${g.date}T${time}:00`);
+        if (isNaN(dt.getTime()) || dt.getTime() < thresholdMs) return;
+
+        const activity = (g.activity || "").toLowerCase();
+        const desc = (g.description || "").toLowerCase();
+        const status = (g.status || "").toLowerCase();
+        const isLoginRelated =
+          activity.indexOf("login") !== -1 ||
+          activity.indexOf("inicio de sesión") !== -1 ||
+          desc.indexOf("inicio de sesión") !== -1;
+        const isFailed = isLoginRelated && status !== "ok";
+        if (isFailed) {
+          failedLoginsLast24h += 1;
+          failedRecent.push({
+            date: g.date,
+            time: g.time || "",
+            user: g.user || "(sin nombre)",
+            description: g.description || "",
+          });
+        }
+      });
+
+      if (securityLoginFailsEl) {
+        securityLoginFailsEl.textContent = String(failedLoginsLast24h);
+      }
+      if (securityLoginSubEl) {
+        securityLoginSubEl.textContent =
+          "Intentos de acceso fallidos (últimas 24 h)";
+      }
+
+      if (securityLoginListEl) {
+        if (!failedRecent.length) {
+          securityLoginListEl.textContent =
+            "Sin intentos fallidos recientes registrados.";
+        } else {
+          failedRecent.sort((a, b) => {
+            const aKey = `${a.date || ""}T${a.time || ""}`;
+            const bKey = `${b.date || ""}T${b.time || ""}`;
+            if (aKey < bKey) return 1;
+            if (aKey > bKey) return -1;
+            return 0;
+          });
+          const topItems = failedRecent.slice(0, 4);
+          securityLoginListEl.innerHTML = "";
+          topItems.forEach((item) => {
+            const row = document.createElement("div");
+            row.className = "admin-security-list-item";
+            const left = document.createElement("span");
+            const right = document.createElement("span");
+            const whenLabel = item.time
+              ? `${formatDateShort(item.date)} · ${item.time}`
+              : formatDateShort(item.date);
+            left.textContent = `${whenLabel}`;
+            right.textContent = item.user;
+            row.title = item.description || "";
+            row.appendChild(left);
+            row.appendChild(right);
+            securityLoginListEl.appendChild(row);
+          });
+        }
+      }
+
+      let expiredPasswords = 0;
+      const users = Array.isArray(adminState.users) ? adminState.users : [];
+      users.forEach((u) => {
+        const changedStr = u && u.passwordLastChanged;
+        if (!changedStr) {
+          expiredPasswords += 1;
+          return;
+        }
+        const changed = new Date(changedStr);
+        if (isNaN(changed.getTime())) {
+          expiredPasswords += 1;
+          return;
+        }
+        const diffMs = now.getTime() - changed.getTime();
+        const days = diffMs / (1000 * 60 * 60 * 24);
+        if (days > 90) {
+          expiredPasswords += 1;
+        }
+      });
+
+      if (securityPassExpiredEl) {
+        securityPassExpiredEl.textContent = `Contraseñas vencidas: ${expiredPasswords}`;
+      }
+    }
+  } catch (e) {
+    console.error("No se pudo calcular resumen de seguridad en dashboard", e);
   }
 
   // Renderizar listado de próximas tareas críticas en el panel
@@ -7554,6 +8523,417 @@ function renderDashboard() {
   });
 }
 
+function renderSecurityView() {
+  const pendingChip = document.getElementById("sec-pending-passwords-chip");
+  const lockedChip = document.getElementById("sec-locked-users-chip");
+  const unassignedChip = document.getElementById("sec-unassigned-users-chip");
+  const pwdTableBody = document.querySelector("#sec-pwd-table tbody");
+  const logTableBody = document.querySelector("#sec-log-table tbody");
+  const alertsTableBody = document.querySelector(
+    "#sec-alerts-table tbody"
+  );
+
+  const users = Array.isArray(adminState.users) ? adminState.users : [];
+
+  const pendingRequests = users.filter((u) => u.pendingPassword);
+  const pendingCount = pendingRequests.filter((u) => {
+    const st = (u.pendingPasswordStatus || "").toLowerCase();
+    return !st || st === "pendiente";
+  }).length;
+  const lockedCount = users.filter((u) => u.locked).length;
+  const unassignedCount = users.filter((u) => !u.stationId).length;
+
+  if (pendingChip) {
+    pendingChip.textContent = `Solicitudes de contraseña pendientes: ${pendingCount}`;
+    pendingChip.classList.toggle("admin-security-chip-alert", pendingCount > 0);
+  }
+  if (lockedChip) {
+    lockedChip.textContent = `Usuarios bloqueados: ${lockedCount}`;
+    lockedChip.classList.toggle("admin-security-chip-alert", lockedCount > 0);
+  }
+  if (unassignedChip) {
+    unassignedChip.textContent = `Usuarios sin estación: ${unassignedCount}`;
+    unassignedChip.classList.toggle("admin-security-chip-alert", unassignedCount > 0);
+  }
+
+  if (pwdTableBody) {
+    pwdTableBody.innerHTML = "";
+    if (!pendingRequests.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 4;
+      td.className = "admin-empty-row";
+      td.textContent = "Sin solicitudes registradas.";
+      tr.appendChild(td);
+      pwdTableBody.appendChild(tr);
+    } else {
+      const toRender = pendingRequests
+        .slice()
+        .sort((a, b) => {
+          const ak = a.pendingPasswordRequestedAt || "";
+          const bk = b.pendingPasswordRequestedAt || "";
+          return ak < bk ? 1 : ak > bk ? -1 : 0;
+        });
+
+      toRender.forEach((user) => {
+        const tr = document.createElement("tr");
+
+        const usernameTd = document.createElement("td");
+        usernameTd.textContent = user.username || "";
+        tr.appendChild(usernameTd);
+
+        const roleTd = document.createElement("td");
+        let roleLabel = "";
+        switch (user.role) {
+          case "admin":
+            roleLabel = "Administrador";
+            break;
+          case "jefe_estacion":
+            roleLabel = "Jefe de estación";
+            break;
+          case "empleado":
+            roleLabel = "Operador";
+            break;
+          case "auditor":
+            roleLabel = "Auditor";
+            break;
+          case "supervisor":
+            roleLabel = "Supervisor regional";
+            break;
+          default:
+            roleLabel = user.role || "";
+        }
+        roleTd.textContent = roleLabel;
+        tr.appendChild(roleTd);
+
+        const statusTd = document.createElement("td");
+        const st = (user.pendingPasswordStatus || "").toLowerCase();
+        if (!st || st === "pendiente") statusTd.textContent = "Pendiente";
+        else if (st === "aprobada") statusTd.textContent = "Aprobada";
+        else if (st === "rechazada") statusTd.textContent = "Rechazada";
+        else statusTd.textContent = user.pendingPasswordStatus || "";
+        tr.appendChild(statusTd);
+
+        const requestedTd = document.createElement("td");
+        const req = user.pendingPasswordRequestedAt || "";
+        requestedTd.textContent = req ? formatDateShort(req.slice(0, 10)) : "-";
+        tr.appendChild(requestedTd);
+
+        pwdTableBody.appendChild(tr);
+      });
+    }
+  }
+
+  if (logTableBody) {
+    logTableBody.innerHTML = "";
+    const allLogs = Array.isArray(adminState.generalLogs)
+      ? adminState.generalLogs.slice()
+      : [];
+
+    if (!allLogs.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 3;
+      td.className = "admin-empty-row";
+      td.textContent = "Sin eventos de seguridad registrados.";
+      tr.appendChild(td);
+      logTableBody.appendChild(tr);
+      return;
+    }
+
+    const securityLogs = allLogs.filter((g) => {
+      const act = (g.activity || "").toLowerCase();
+      const desc = (g.description || "").toLowerCase();
+      return (
+        act.includes("inicio de sesión") ||
+        act.includes("login") ||
+        act.includes("intento de inicio de sesión") ||
+        act.includes("bloqueo") ||
+        act.includes("contraseña") ||
+        desc.includes("inicio de sesión") ||
+        desc.includes("contraseña") ||
+        desc.includes("login")
+      );
+    });
+
+    if (!securityLogs.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 3;
+      td.className = "admin-empty-row";
+      td.textContent = "Sin eventos de seguridad registrados.";
+      tr.appendChild(td);
+      logTableBody.appendChild(tr);
+      return;
+    }
+
+    securityLogs
+      .sort((a, b) => {
+        const ak = `${a.date || ""}T${a.time || ""}`;
+        const bk = `${b.date || ""}T${b.time || ""}`;
+        if (ak < bk) return 1;
+        if (ak > bk) return -1;
+        return 0;
+      })
+      .slice(0, 40)
+      .forEach((log) => {
+        const tr = document.createElement("tr");
+
+        const dateTd = document.createElement("td");
+        const whenLabel = log.date
+          ? `${formatDateShort(log.date)}${log.time ? " · " + log.time : ""}`
+          : "-";
+        dateTd.textContent = whenLabel;
+        tr.appendChild(dateTd);
+
+        const typeTd = document.createElement("td");
+        typeTd.textContent = log.activity || "";
+        tr.appendChild(typeTd);
+
+        const detailTd = document.createElement("td");
+        detailTd.textContent = log.description || "";
+        tr.appendChild(detailTd);
+
+        logTableBody.appendChild(tr);
+      });
+  }
+
+  // Panel de alertas activas
+  if (alertsTableBody) {
+    alertsTableBody.innerHTML = "";
+    const alerts = Array.isArray(adminState.alerts)
+      ? adminState.alerts.filter((a) => a && a.status === "activa")
+      : [];
+
+    if (!alerts.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 6;
+      td.className = "admin-empty-row";
+      td.textContent = "Sin alertas activas.";
+      tr.appendChild(td);
+      alertsTableBody.appendChild(tr);
+    } else {
+      alerts
+        .slice()
+        .sort((a, b) => {
+          const ak = a.createdAt || "";
+          const bk = b.createdAt || "";
+          return ak < bk ? 1 : ak > bk ? -1 : 0;
+        })
+        .forEach((alert) => {
+          const tr = document.createElement("tr");
+
+          const whenTd = document.createElement("td");
+          const whenIso = alert.createdAt || "";
+          const whenDate = whenIso ? whenIso.slice(0, 10) : "";
+          whenTd.textContent = whenDate
+            ? formatDateShort(whenDate)
+            : "-";
+          tr.appendChild(whenTd);
+
+          const stationTd = document.createElement("td");
+          stationTd.textContent = alert.stationName || "Sin estación";
+          tr.appendChild(stationTd);
+
+          const descTd = document.createElement("td");
+          descTd.textContent = alert.message || alert.description || "";
+          tr.appendChild(descTd);
+
+          const sevTd = document.createElement("td");
+          const sevSpan = document.createElement("span");
+          sevSpan.className = "badge-priority";
+          const sev = (alert.severity || "").toLowerCase();
+          if (sev === "alta") {
+            sevSpan.classList.add("badge-priority-alta");
+            sevSpan.textContent = "Alta";
+          } else if (sev === "media") {
+            sevSpan.classList.add("badge-priority-media");
+            sevSpan.textContent = "Media";
+          } else if (sev === "baja") {
+            sevSpan.classList.add("badge-priority-baja");
+            sevSpan.textContent = "Baja";
+          } else {
+            sevSpan.textContent = alert.level || "";
+          }
+          sevTd.appendChild(sevSpan);
+          tr.appendChild(sevTd);
+
+          const ruleTd = document.createElement("td");
+          if (alert.rule === "critical_incident") {
+            ruleTd.textContent = "Incidente crítico";
+          } else if (alert.rule === "station_burst") {
+            ruleTd.textContent = "Racha de incidentes";
+          } else {
+            ruleTd.textContent = alert.rule || "";
+          }
+          tr.appendChild(ruleTd);
+
+          const actionsTd = document.createElement("td");
+          const btnResolve = document.createElement("button");
+          btnResolve.type = "button";
+          btnResolve.className = "ghost-btn";
+          btnResolve.textContent = "Marcar atendida";
+          btnResolve.addEventListener("click", () => {
+            const target = (adminState.alerts || []).find(
+              (a) => a && a.id === alert.id
+            );
+            if (!target) return;
+            target.status = "resuelta";
+            target.resolvedAt = new Date().toISOString();
+            if (currentUser) {
+              target.resolvedBy = currentUser.name || "";
+            }
+            saveAdminState();
+            renderSecurityView();
+          });
+          actionsTd.appendChild(btnResolve);
+          tr.appendChild(actionsTd);
+
+          alertsTableBody.appendChild(tr);
+        });
+    }
+  }
+}
+
+function renderMaintenanceView() {
+  const tbody = document.querySelector("#maintenance-table tbody");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  const monthInput = document.getElementById("maintenance-filter-month");
+  const statusSelect = document.getElementById("maintenance-filter-status");
+  const monthVal = monthInput && monthInput.value ? monthInput.value : "";
+  const statusVal = statusSelect ? statusSelect.value : "";
+
+  const year = monthVal ? monthVal.split("-")[0] : "";
+  const month = monthVal ? monthVal.split("-")[1] : "";
+
+  const items = Array.isArray(adminState.maintenance)
+    ? adminState.maintenance.slice()
+    : [];
+
+  const filtered = items.filter((m) => {
+    if (!m) return false;
+    if (statusVal && m.status !== statusVal) return false;
+    if (monthVal && m.datePlanned) {
+      const [y, mm] = String(m.datePlanned).split("-");
+      if (y !== year || mm !== month) return false;
+    }
+    return true;
+  });
+
+  if (!filtered.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 6;
+    td.className = "admin-empty-row";
+    td.textContent = monthVal
+      ? "Sin mantenimientos programados para el mes seleccionado."
+      : "Sin mantenimientos programados.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  filtered
+    .sort((a, b) => {
+      const ak = `${a.datePlanned || ""}`;
+      const bk = `${b.datePlanned || ""}`;
+      if (ak < bk) return -1;
+      if (ak > bk) return 1;
+      return 0;
+    })
+    .forEach((m) => {
+      const tr = document.createElement("tr");
+
+      const dateTd = document.createElement("td");
+      dateTd.textContent = m.datePlanned
+        ? formatDateShort(m.datePlanned)
+        : "-";
+      tr.appendChild(dateTd);
+
+      const stationTd = document.createElement("td");
+      const st = (adminState.stations || []).find(
+        (s) => s.id === m.stationId
+      );
+      stationTd.textContent = st ? st.name : "Sin estación";
+      tr.appendChild(stationTd);
+
+      const typeTd = document.createElement("td");
+      typeTd.textContent =
+        m.type === "preventivo"
+          ? "Preventivo"
+          : m.type === "correctivo"
+          ? "Correctivo"
+          : m.type || "";
+      tr.appendChild(typeTd);
+
+      const titleTd = document.createElement("td");
+      titleTd.textContent = m.title || "";
+      tr.appendChild(titleTd);
+
+      const statusTd = document.createElement("td");
+      statusTd.textContent =
+        m.status === "pendiente"
+          ? "Pendiente"
+          : m.status === "en_proceso"
+          ? "En progreso"
+          : m.status === "completado"
+          ? "Completado"
+          : m.status === "cancelado"
+          ? "Cancelado"
+          : m.status || "";
+      tr.appendChild(statusTd);
+
+      const actionsTd = document.createElement("td");
+      const btnEdit = document.createElement("button");
+      btnEdit.type = "button";
+      btnEdit.className = "ghost-btn";
+      btnEdit.textContent = "Editar";
+      btnEdit.addEventListener("click", () => {
+        const idInput = document.getElementById("maintenance-id");
+        const stationSelect = document.getElementById("maintenance-station");
+        const dateInput = document.getElementById("maintenance-date");
+        const typeSelect = document.getElementById("maintenance-type");
+        const titleInput = document.getElementById("maintenance-title");
+        const statusSelect2 = document.getElementById("maintenance-status");
+        const notesInput = document.getElementById("maintenance-notes");
+
+        if (!idInput) return;
+        idInput.value = String(m.id || "");
+        if (stationSelect) stationSelect.value = m.stationId || "";
+        if (dateInput) dateInput.value = m.datePlanned || "";
+        if (typeSelect) typeSelect.value = m.type || "preventivo";
+        if (titleInput) titleInput.value = m.title || "";
+        if (statusSelect2) statusSelect2.value = m.status || "pendiente";
+        if (notesInput) notesInput.value = m.notes || "";
+      });
+
+      const btnDone = document.createElement("button");
+      btnDone.type = "button";
+      btnDone.className = "ghost-btn";
+      btnDone.textContent = "Marcar completado";
+      btnDone.addEventListener("click", () => {
+        const item = (adminState.maintenance || []).find(
+          (x) => x && x.id === m.id
+        );
+        if (!item) return;
+        item.status = "completado";
+        item.updatedAt = new Date().toISOString();
+        saveAdminState();
+        renderMaintenanceView();
+      });
+
+      actionsTd.appendChild(btnEdit);
+      actionsTd.appendChild(btnDone);
+      tr.appendChild(actionsTd);
+
+      tbody.appendChild(tr);
+    });
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   if (!isAuthenticated()) {
     window.location.href = "login.html";
@@ -7564,36 +8944,49 @@ window.addEventListener("DOMContentLoaded", () => {
   (async function initAdmin() {
     await syncAdminStateFromBackendIfAvailable();
     loadAdminState();
-  currentUser = getCurrentUser();
-  resolveAssignedStationId();
-  applySavedTheme();
-  hydrateLogStationSelect();
-  hydrateLogFilterStationSelect();
-  hydrateUserStationSelect();
-  hydrateDashboardStationSelect();
-  initActivitiesFilters && initActivitiesFilters();
-  setupAdminEvents();
-  setupThemeToggle();
-  setAdminView("dashboard");
 
-  const userEl = document.querySelector(".admin-topbar-user");
-  if (userEl) {
-    let roleLabel = "Operador";
-    if (currentUser.role === "admin") roleLabel = "Administrador";
-    else if (currentUser.role === "jefe_estacion") roleLabel = "Jefe de estación";
-    else if (currentUser.role === "auditor") roleLabel = "Auditor";
-    else if (currentUser.role === "supervisor") roleLabel = "Supervisor regional";
-    userEl.textContent = `${currentUser.name} · ${roleLabel}`;
-  }
-
-  applySidebarByRole();
-
-  window.addEventListener("storage", (event) => {
-    if (!event) return;
-    if (event.key && !event.key.startsWith(AUTH_KEY)) return;
-    if (!isAuthenticated()) {
-      window.location.href = "login.html";
+    currentUser = getCurrentUser();
+    resolveAssignedStationId();
+    applySavedTheme();
+    updateAdminLastSyncLabel();
+    updateAdminConnectionStatusLabel(null);
+    checkBackendConnectionStatus();
+    if (adminConnectionStatusTimer) {
+      clearInterval(adminConnectionStatusTimer);
     }
-  });
+    adminConnectionStatusTimer = setInterval(
+      checkBackendConnectionStatus,
+      5 * 60 * 1000
+    );
+    hydrateLogStationSelect();
+    hydrateLogFilterStationSelect();
+    hydrateUserStationSelect();
+    hydrateDashboardStationSelect();
+    if (typeof initActivitiesFilters === "function") {
+      initActivitiesFilters();
+    }
+    setupAdminEvents();
+    setupThemeToggle();
+    setAdminView("dashboard");
+
+    const userEl = document.querySelector(".admin-topbar-user");
+    if (userEl && currentUser) {
+      let roleLabel = "Operador";
+      if (currentUser.role === "admin") roleLabel = "Administrador";
+      else if (currentUser.role === "jefe_estacion") roleLabel = "Jefe de estación";
+      else if (currentUser.role === "auditor") roleLabel = "Auditor";
+      else if (currentUser.role === "supervisor") roleLabel = "Supervisor regional";
+      userEl.textContent = `${currentUser.name} · ${roleLabel}`;
+    }
+
+    applySidebarByRole();
+
+    window.addEventListener("storage", (event) => {
+      if (!event) return;
+      if (event.key && !event.key.startsWith(AUTH_KEY)) return;
+      if (!isAuthenticated()) {
+        window.location.href = "login.html";
+      }
+    });
   })();
 });

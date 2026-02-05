@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/globe.gl" defer></script>
   </head>
   <body>
     <div class="admin-page">
@@ -24,6 +25,13 @@
             <span id="topbar-incidents" class="admin-topbar-chip admin-topbar-chip-warning">Incidencias: 0</span>
             <span id="topbar-overdue" class="admin-topbar-chip admin-topbar-chip-danger">Vencidos: 0</span>
           </div>
+          <span
+            id="admin-connection-status"
+            class="admin-topbar-sync admin-topbar-conn"
+          >
+            Servidor: sin comprobar
+          </span>
+          <span id="admin-last-sync" class="admin-topbar-sync">Sincronizado: nunca</span>
           <button id="admin-sync-btn" type="button" class="admin-topbar-theme-toggle" aria-label="Sincronizar datos">
             &#10227;
           </button>
@@ -63,9 +71,17 @@
               <span class="admin-sidebar-icon">✅</span>
               <span>Actividades</span>
             </button>
+            <button class="admin-sidebar-item" type="button" data-view="security">
+              <span class="admin-sidebar-icon">🛡️</span>
+              <span>Seguridad</span>
+            </button>
             <button class="admin-sidebar-item" type="button" data-view="management">
               <span class="admin-sidebar-icon">🕒</span>
               <span>Gestión turnos</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="maintenance">
+              <span class="admin-sidebar-icon">🔧</span>
+              <span>Mantenimiento</span>
             </button>
             <button class="admin-sidebar-item" type="button" data-view="users">
               <span class="admin-sidebar-icon">👤</span>
@@ -75,9 +91,17 @@
               <span class="admin-sidebar-icon">⛽</span>
               <span>Estaciones</span>
             </button>
+              <button class="admin-sidebar-item" type="button" data-view="stations-globe">
+                <span class="admin-sidebar-icon">🌍</span>
+                <span>Mapa global</span>
+              </button>
             <button class="admin-sidebar-item" type="button" data-view="tv">
               <span class="admin-sidebar-icon">📺</span>
               <span>Modo TV</span>
+            </button>
+            <button class="admin-sidebar-item" type="button" data-view="settings">
+              <span class="admin-sidebar-icon">🛠️</span>
+              <span>Configuración</span>
             </button>
             <button class="admin-sidebar-item" type="button" data-view="profile">
               <span class="admin-sidebar-icon">⚙️</span>
@@ -116,7 +140,10 @@
                   <p class="admin-view-subtitle">Resumen operativo por estación seleccionada.</p>
                 </div>
                 <label class="field">
-                  <span class="field-label">Estación</span>
+                  <div class="admin-view-header-right">
+                    <input id="log-search" class="admin-view-search" placeholder="Buscar..." />
+                    <button id="btn-logs-clear" class="ghost-btn" type="button">Limpiar filtros</button>
+                  </div>
                   <select id="dashboard-station-select"></select>
                 </label>
               </div>
@@ -124,7 +151,10 @@
                 <div class="admin-summary-chip" id="summary-logs-today">
                   <span class="admin-summary-label">Registros hoy</span>
                   <span class="admin-summary-value">0</span>
-                </div>
+                  <div class="admin-view-header-right">
+                    <input id="alerts-search" class="admin-view-search" placeholder="Buscar..." />
+                    <button id="btn-alerts-clear" class="ghost-btn" type="button">Limpiar filtros</button>
+                  </div>
                 <div class="admin-summary-chip" id="summary-incidents-today">
                   <span class="admin-summary-label">Incidentes hoy</span>
                   <span class="admin-summary-value">0</span>
@@ -145,6 +175,10 @@
                   <span class="admin-summary-label">Tareas pendientes</span>
                   <span class="admin-summary-value">0</span>
                 </div>
+                <div class="admin-summary-chip" id="summary-tasks-risk">
+                  <span class="admin-summary-label">Tareas en riesgo</span>
+                  <span class="admin-summary-value">0</span>
+                </div>
                 <div class="admin-summary-chip" id="summary-tasks-evidence">
                   <span class="admin-summary-label">Con evidencia</span>
                   <span class="admin-summary-value">0</span>
@@ -154,6 +188,15 @@
                   <span class="admin-summary-value">0</span>
                 </div>
               </div>
+              <section class="admin-dashboard-health">
+                <article class="admin-stat-card admin-health-card">
+                  <h3 class="admin-stat-label">Salud del sistema</h3>
+                  <p id="dash-health-backend" class="admin-stat-sub">Servidor: sin comprobar</p>
+                  <p id="dash-health-admin-sync" class="admin-stat-sub">Última sync administración: -</p>
+                  <p id="dash-health-ops-sync" class="admin-stat-sub">Última sync operaciones: -</p>
+                  <p id="dash-health-data-size" class="admin-stat-sub">Tamaño aproximado de datos: -</p>
+                </article>
+              </section>
               <section class="admin-dashboard-tasks" id="dashboard-tasks-section">
                 <div class="admin-dashboard-tasks-header">
                   <h3 class="admin-stat-label">Próximas tareas críticas</h3>
@@ -195,6 +238,19 @@
                     <h3 class="admin-stat-label">Actividad por turno (hoy)</h3>
                     <p id="dash-shifts-summary" class="admin-stat-sub">Matutino: 0 · Vespertino: 0 · Nocturno: 0</p>
                     <p id="dash-shifts-fuel" class="admin-stat-sub">Pipas — Mat: 0 · Vesp: 0 · Noc: 0</p>
+                  </article>
+                  <article class="admin-stat-card">
+                    <h3 class="admin-stat-label">Seguridad de accesos</h3>
+                    <p id="dash-security-login-fails" class="admin-stat-value">0</p>
+                    <p id="dash-security-login-sub" class="admin-stat-sub">Intentos de acceso fallidos (últimas 24 h)</p>
+                    <p id="dash-security-password-expired" class="admin-stat-sub">Contraseñas vencidas: 0</p>
+                    <div class="admin-security-list" id="dash-security-login-list"></div>
+                    <button
+                      id="dash-security-view-logins"
+                      type="button"
+                      class="ghost-btn"
+                      style="margin-top: 6px;"
+                    >Ver detalles en bitácora</button>
                   </article>
                 </div>
                 <div class="admin-dashboard-charts">
@@ -253,6 +309,138 @@
                   </article>
                 </div>
               </section>
+            </div>
+
+            <div id="admin-view-security" class="admin-view">
+              <div class="admin-view-header">
+                <div class="admin-view-header-main">
+                  <h2>Seguridad y accesos</h2>
+                  <p class="admin-view-subtitle">Centro de aprobaciones y eventos de seguridad.</p>
+                </div>
+              </div>
+              <div class="admin-security-layout">
+                <section class="admin-security-panel">
+                  <h3 class="admin-security-title">Resumen rápido</h3>
+                  <div class="admin-security-summary">
+                    <div class="admin-security-chip" id="sec-pending-passwords-chip">Solicitudes de contraseña pendientes: 0</div>
+                    <div class="admin-security-chip" id="sec-locked-users-chip">Usuarios bloqueados: 0</div>
+                    <div class="admin-security-chip" id="sec-unassigned-users-chip">Usuarios sin estación: 0</div>
+                  </div>
+                  <div class="admin-security-actions">
+                    <button id="sec-goto-users" class="ghost-btn" type="button">Ir a gestión de usuarios</button>
+                    <button id="sec-goto-logs" class="ghost-btn" type="button">Ver bitácora de seguridad</button>
+                  </div>
+                  <div class="admin-security-pending">
+                    <h4 class="admin-security-subtitle">Solicitudes de cambio de contraseña</h4>
+                    <div class="table-wrapper admin-table-wrapper">
+                      <table class="table" id="sec-pwd-table">
+                        <thead>
+                          <tr>
+                            <th>Usuario</th>
+                            <th>Rol</th>
+                            <th>Estado</th>
+                            <th>Solicitado</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="admin-security-pending">
+                    <h4 class="admin-security-subtitle">Alertas activas por reglas inteligentes</h4>
+                    <div class="table-wrapper admin-table-wrapper">
+                      <table class="table" id="sec-alerts-table">
+                        <thead>
+                          <tr>
+                            <th>Fecha</th>
+                            <th>Estación</th>
+                            <th>Detalle</th>
+                            <th>Severidad</th>
+                            <th>Regla</th>
+                            <th>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </section>
+                <section class="admin-security-panel admin-security-log">
+                  <h3 class="admin-security-title">Eventos recientes de seguridad</h3>
+                  <div class="table-wrapper admin-table-wrapper">
+                    <table class="table" id="sec-log-table">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Tipo</th>
+                          <th>Detalle</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            </div>
+
+            <div id="admin-view-settings" class="admin-view">
+              <div class="admin-view-header">
+                <div class="admin-view-header-main">
+                  <h2>Configuración</h2>
+                  <p class="admin-view-subtitle">Políticas de seguridad y parámetros del sistema.</p>
+                </div>
+              </div>
+              <div class="admin-settings-layout">
+                <section class="admin-settings-panel">
+                  <h3 class="admin-settings-title">Seguridad de acceso</h3>
+                  <form id="settings-security-form" class="form-grid admin-settings-form">
+                    <label class="field">
+                      <span class="field-label">Intentos máximos fallidos (no admins)</span>
+                      <input id="settings-max-failed" type="number" min="1" step="1" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">Ventana de bloqueo (minutos)</span>
+                      <input id="settings-lock-window" type="number" min="1" step="1" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">Días para caducar contraseña</span>
+                      <input id="settings-password-expiry" type="number" min="1" step="1" />
+                    </label>
+                    <hr class="admin-settings-separator" />
+                    <h4 class="admin-settings-subtitle">Reglas inteligentes de alertas</h4>
+                    <label class="field field-inline-checkbox">
+                      <span class="field-label">Activar alerta por incidente crítico (error · severidad alta)</span>
+                      <input id="settings-alert-critical-enabled" type="checkbox" />
+                    </label>
+                    <label class="field field-inline-checkbox">
+                      <span class="field-label">Activar alerta por racha de incidentes en la misma estación</span>
+                      <input id="settings-alert-burst-enabled" type="checkbox" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">Umbral de racha (número de incidentes)</span>
+                      <input id="settings-alert-burst-threshold" type="number" min="2" step="1" />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">Ventana de racha (minutos)</span>
+                      <input id="settings-alert-burst-window" type="number" min="15" step="5" />
+                    </label>
+                    <div class="form-actions">
+                      <button class="primary-btn" type="submit">Guardar políticas</button>
+                    </div>
+                  </form>
+                </section>
+                <section class="admin-settings-panel admin-settings-help">
+                  <h3 class="admin-settings-title">Referencia rápida</h3>
+                  <p class="admin-view-subtitle">Estos valores afectan el inicio de sesión y la caducidad de contraseñas.</p>
+                  <ul class="admin-settings-notes">
+                    <li>El usuario maestro misa nunca se bloquea temporalmente.</li>
+                    <li>Los operadores solo verán advertencias por contraseña vencida.</li>
+                    <li>Administradores y jefes deberán cambiar contraseña cuando esté vencida.</li>
+                    <li>Las alertas críticas ayudan a resaltar incidentes de mayor riesgo.</li>
+                    <li>La racha de incidentes detecta patrones anormales en una misma estación.</li>
+                  </ul>
+                </section>
+              </div>
             </div>
 
             <div id="admin-view-logs" class="admin-view">
@@ -566,8 +754,13 @@
                 <h2>Bitácora general del sistema</h2>
                 <div class="admin-view-header-right">
                   <input id="general-search" class="admin-view-search" placeholder="Buscar..." />
+                  <button id="btn-general-today" class="ghost-btn" type="button">Solo hoy</button>
+                  <button id="btn-general-clear" class="ghost-btn" type="button">Limpiar filtros</button>
                   <button id="btn-export-general-csv" class="ghost-btn" type="button">Exportar CSV</button>
                 </div>
+              </div>
+              <div id="general-summary" class="admin-general-summary">
+                Hoy: 0 · Últimos 7 días: 0 · Total: 0
               </div>
               <div class="table-wrapper admin-table-wrapper">
                 <table class="table" id="general-table">
@@ -659,11 +852,15 @@
 
             <div id="admin-view-stations" class="admin-view">
               <div class="admin-view-header">
-                <h2>Generar estaciones</h2>
+                <div class="admin-view-header-main">
+                  <h2>Generar estaciones</h2>
+                  <span id="stations-users-unassigned" class="admin-chip-muted" hidden>Usuarios sin estación: 0</span>
+                </div>
                 <input id="station-search" class="admin-view-search" placeholder="Buscar estación..." />
               </div>
               <div class="admin-stations-layout">
                 <form id="station-form" class="form-grid admin-station-form">
+                  <input id="station-id" type="hidden" />
                   <label class="field">
                     <span class="field-label">Nombre de la estación</span>
                     <input id="station-name" type="text" required />
@@ -671,6 +868,22 @@
                   <label class="field">
                     <span class="field-label">Ubicación</span>
                     <input id="station-location" type="text" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Latitud</span>
+                    <input id="station-lat" type="number" step="0.000001" placeholder="Ej. 25.6866" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Longitud</span>
+                    <input id="station-lng" type="number" step="0.000001" placeholder="Ej. -100.3161" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Año inicio operación</span>
+                    <input id="station-year-from" type="number" min="1900" max="2100" placeholder="Ej. 2015" />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Año fin (opcional)</span>
+                    <input id="station-year-to" type="number" min="1900" max="2100" placeholder="Ej. 2030" />
                   </label>
                   <label class="field">
                     <span class="field-label">Descripción</span>
@@ -686,6 +899,21 @@
                   <h3 class="admin-stations-title">Estaciones y operadores</h3>
                   <div id="stations-list" class="admin-stations-list"></div>
                 </div>
+              </div>
+            </div>
+
+            <div id="admin-view-stations-globe" class="admin-view">
+              <div class="admin-view-header">
+                <h2>Mapa global de estaciones</h2>
+              </div>
+              <div class="admin-stations-globe-layout">
+                <div id="stations-globe" class="stations-globe-canvas"></div>
+                <aside class="stations-globe-sidebar" id="stations-globe-sidebar">
+                  <h3 class="admin-stations-title">Detalles de estación</h3>
+                  <div id="stations-globe-details" class="stations-globe-details">
+                    <p class="admin-empty-row-text">Selecciona un marcador en el globo para ver la información de la estación.</p>
+                  </div>
+                </aside>
               </div>
             </div>
 
@@ -766,6 +994,7 @@
                   </article>
                 </div>
                 <p id="report-trend-text" class="admin-report-trend"></p>
+                <p id="report-comparative-text" class="admin-report-trend"></p>
                 <div class="table-wrapper admin-table-wrapper" style="margin-top: 12px;">
                   <table class="table" id="report-table">
                     <thead>
@@ -943,9 +1172,110 @@
               </div>
             </div>
 
+            <div id="admin-view-maintenance" class="admin-view">
+              <div class="admin-view-header">
+                <h2>Mantenimiento programado</h2>
+              </div>
+              <div class="admin-stations-layout">
+                <form id="maintenance-form" class="form-grid admin-station-form">
+                  <input id="maintenance-id" type="hidden" />
+                  <label class="field">
+                    <span class="field-label">Estación</span>
+                    <select id="maintenance-station" required></select>
+                  </label>
+                  <div class="field-group">
+                    <label class="field">
+                      <span class="field-label">Fecha programada</span>
+                      <input id="maintenance-date" type="date" required />
+                    </label>
+                    <label class="field">
+                      <span class="field-label">Tipo</span>
+                      <select id="maintenance-type" required>
+                        <option value="preventivo">Preventivo</option>
+                        <option value="correctivo">Correctivo</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label class="field">
+                    <span class="field-label">Título</span>
+                    <input id="maintenance-title" type="text" placeholder="Ej. Inspección anual de equipos" required />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Estado</span>
+                    <select id="maintenance-status" required>
+                      <option value="pendiente">Pendiente</option>
+                      <option value="en_proceso">En progreso</option>
+                      <option value="completado">Completado</option>
+                      <option value="cancelado">Cancelado</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Notas</span>
+                    <textarea id="maintenance-notes" rows="2" placeholder="Detalles relevantes del mantenimiento..."></textarea>
+                  </label>
+                  <div class="form-actions">
+                    <button class="primary-btn" type="submit">Guardar mantenimiento</button>
+                    <button id="maintenance-clear" class="ghost-btn" type="button">Limpiar</button>
+                  </div>
+                </form>
+                <section class="admin-stations-panel">
+                  <div class="admin-view-header" style="margin-bottom: 8px;">
+                    <div class="admin-view-header-main">
+                      <h3 class="admin-subtitle">Calendario de mantenimientos</h3>
+                    </div>
+                    <div class="admin-view-header-right">
+                      <label class="field">
+                        <span class="field-label">Mes</span>
+                        <input id="maintenance-filter-month" type="month" />
+                      </label>
+                      <label class="field">
+                        <span class="field-label">Estado</span>
+                        <select id="maintenance-filter-status">
+                          <option value="">Todos</option>
+                          <option value="pendiente">Pendiente</option>
+                          <option value="en_proceso">En progreso</option>
+                          <option value="completado">Completado</option>
+                          <option value="cancelado">Cancelado</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="table-wrapper admin-table-wrapper">
+                    <table class="table" id="maintenance-table">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Estación</th>
+                          <th>Tipo</th>
+                          <th>Título</th>
+                          <th>Estado</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            </div>
+
             <div id="admin-view-users" class="admin-view">
               <div class="admin-view-header">
-                <h2>Usuarios</h2>
+                <div class="admin-view-header-main">
+                  <h2>Usuarios</h2>
+                  <span id="users-unassigned-chip" class="admin-chip-muted" hidden>Sin estación asignada: 0</span>
+                </div>
+                <div class="admin-view-header-right">
+                  <input id="users-search" class="admin-view-search" placeholder="Buscar por nombre o usuario" />
+                  <select id="users-filter-role" class="admin-view-select">
+                    <option value="">Todos los roles</option>
+                    <option value="admin">Administrador</option>
+                    <option value="jefe_estacion">Jefe de estación</option>
+                    <option value="auditor">Auditor</option>
+                    <option value="empleado">Operador</option>
+                    <option value="supervisor">Supervisor regional</option>
+                  </select>
+                </div>
               </div>
               <div class="admin-users-layout">
                 <form id="user-form" class="form-grid admin-user-form">
@@ -989,7 +1319,18 @@
                 <div class="admin-users-panel">
                     <div class="admin-users-header-row">
                       <h3 class="admin-stations-title">Usuarios registrados</h3>
+                      <button
+                        id="btn-export-users"
+                        class="ghost-btn"
+                        type="button"
+                      >
+                        Exportar usuarios
+                      </button>
                       <button id="btn-user-reset-password" class="ghost-btn" type="button">Resetear contraseña seleccionada</button>
+                      <button id="btn-user-lock" class="ghost-btn" type="button">Bloquear usuario seleccionado</button>
+                      <button id="btn-user-unlock" class="ghost-btn" type="button">Desbloquear usuario seleccionado</button>
+                      <button id="btn-user-approve-pwd" class="ghost-btn" type="button">Aprobar cambio de contraseña</button>
+                      <button id="btn-user-reject-pwd" class="ghost-btn" type="button">Rechazar solicitud de cambio</button>
                     </div>
                   <div class="table-wrapper admin-table-wrapper">
                     <table class="table" id="users-table">
@@ -1002,6 +1343,8 @@
                           <th>Rol</th>
                           <th>Estación</th>
                           <th>Área</th>
+                          <th>Estado</th>
+                          <th>Solicitud contraseña</th>
                         </tr>
                       </thead>
                       <tbody></tbody>
@@ -1018,6 +1361,31 @@
                       Selecciona un usuario de la tabla para ver su resumen de bitácora y tareas.
                     </p>
                     <div id="user-summary-body" class="admin-user-summary-grid" hidden></div>
+                    <form id="user-quick-edit-form" class="admin-user-quick-edit" hidden>
+                      <label class="field">
+                        <span class="field-label">Rol</span>
+                        <select id="user-quick-role">
+                          <option value="admin">Administrador</option>
+                          <option value="jefe_estacion">Jefe de estación</option>
+                          <option value="auditor">Auditor (solo lectura)</option>
+                          <option value="empleado">Operador</option>
+                          <option value="supervisor">Supervisor regional</option>
+                        </select>
+                      </label>
+                      <label class="field">
+                        <span class="field-label">Estación</span>
+                        <select id="user-quick-station">
+                          <option value="">Sin estación</option>
+                        </select>
+                      </label>
+                      <label class="field">
+                        <span class="field-label">Área</span>
+                        <input id="user-quick-area" type="text" />
+                      </label>
+                      <div class="form-actions">
+                        <button class="primary-btn" type="submit">Guardar cambios rápidos</button>
+                      </div>
+                    </form>
                     <div id="user-tasks-panel" class="admin-user-tasks" hidden>
                       <h4 class="admin-user-summary-title">Actividades / tareas del usuario</h4>
                       <div class="table-wrapper admin-table-wrapper">
@@ -1132,6 +1500,7 @@
             <input id="global-search-input" class="admin-search-input" placeholder="Búsqueda global (registros, usuarios, estaciones)" />
             <button id="global-search-btn" class="admin-search-green" type="button"></button>
             <button class="admin-search-add" type="button">+</button>
+            <span id="global-search-summary" class="admin-search-summary"></span>
           </div>
         </main>
       </div>
