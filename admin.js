@@ -46,6 +46,7 @@ let stationsEditingId = ""; // estación actualmente en edición desde el formul
 let pendingLogStationFilterId = ""; // filtro de estación a aplicar al abrir la vista de bitácora desde el globo
 
 let currentUser = null;
+let adminConnectionStatusTimer = null;
 
 function updateAdminLastSyncLabel() {
   try {
