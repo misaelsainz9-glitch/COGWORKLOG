@@ -48,6 +48,7 @@ let dashboardStationId = ""; // estación seleccionada en el panel principal
 
 let currentUser = null;
 let adminConnectionStatusTimer = null;
+let adminLastBackendStatus = "unknown";
 
 function updateAdminLastSyncLabel() {
   try {
@@ -77,20 +78,62 @@ function updateAdminConnectionStatusLabel(status) {
     if (!el) return;
 
     if (!status) {
+      adminLastBackendStatus = "unknown";
       el.textContent = "Servidor: sin comprobar";
       el.classList.remove("is-ok", "is-error");
       return;
     }
 
     if (status.ok) {
+      adminLastBackendStatus = "online";
       el.textContent = "Servidor: en línea";
       el.classList.add("is-ok");
       el.classList.remove("is-error");
     } else {
+      adminLastBackendStatus = "offline";
       el.textContent = "Servidor: sin conexión";
       el.classList.add("is-error");
       el.classList.remove("is-ok");
     }
+  } catch (e) {
+    // silencioso
+  }
+}
+
+function showToast(message, type) {
+  try {
+    const container = document.getElementById("toast-container");
+    if (!container) {
+      console.log("[TOAST]", message);
+      return;
+    }
+
+    const toast = document.createElement("div");
+    toast.className = "toast";
+
+    if (type === "success") {
+      toast.classList.add("toast-success");
+    } else if (type === "error") {
+      toast.classList.add("toast-error");
+    } else if (type === "warning") {
+      toast.classList.add("toast-warning");
+    }
+
+    toast.textContent = message || "";
+
+    toast.addEventListener("click", () => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    });
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, 4000);
   } catch (e) {
     // silencioso
   }
