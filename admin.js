@@ -7412,6 +7412,34 @@ function getCurrentAdminUserRecord() {
       ) || null;
   }
 
+  if (!user) {
+    // Si no existe en el catálogo, crearlo a partir del usuario actual
+    const todayIso = new Date().toISOString().slice(0, 10);
+    user = {
+      id:
+        (adminState.users || []).reduce(
+          (maxId, u) => Math.max(maxId, typeof u.id === "number" ? u.id : 0),
+          0
+        ) + 1,
+      username: username || (currentUser.username || ""),
+      name: currentUser.name || username || "Usuario",
+      role: currentUser.role || "empleado",
+      area: currentUser.area || "",
+      stationId: currentUser.stationId || "",
+      passwordLastChanged: todayIso,
+      locked: false,
+    };
+    if (!Array.isArray(adminState.users)) {
+      adminState.users = [];
+    }
+    adminState.users.push(user);
+    try {
+      saveAdminState();
+    } catch (e) {
+      // silencioso
+    }
+  }
+
   return user;
 }
 
