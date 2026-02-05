@@ -1,56 +1,21 @@
 {
   "version": 11,
-  "stations": [
+  "stations": [],
+  "logs": [],
+  "generalLogs": [],
+  "users": [
     {
-      "id": "st1",
-      "name": "Gasolinera Norte",
-      "location": "Monterrey, N.L.",
-      "description": "Gasolinera urbana · Turnos 24h · Zona norte",
-      "employees": [
-        {
-          "name": "Jefe Norte",
-          "role": "Encargado · Jefe de estación"
-        },
-        {
-          "name": "Operador Norte 1",
-          "role": "Operador · Área Operación"
-        },
-        {
-          "name": "Operador Norte 2",
-          "role": "Operador · Área Operación"
-        },
-        {
-          "name": "Operador Norte 3",
-          "role": "Operador · Área Operación"
-        }
-      ]
-    },
-    {
-      "id": "st2",
-      "name": "Gasolinera Sur",
-      "location": "Monterrey, N.L.",
-      "description": "Gasolinera urbana · Turnos 24h · Zona sur",
-      "employees": [
-        {
-          "name": "Jefe Sur",
-          "role": "Encargado · Jefe de estación"
-        },
-        {
-          "name": "Operador Sur 1",
-          "role": "Operador · Área Operación"
-        },
-        {
-          "name": "Operador Sur 2",
-          "role": "Operador · Área Operación"
-        },
-        {
-          "name": "Operador Sur 3",
-          "role": "Operador · Área Operación"
-        }
-      ]
+      "username": "misa",
+      "password": "Pepepito2",
+      "name": "Misa",
+      "role": "admin",
+      "area": "Corporativo",
+      "passwordLastChanged": "2025-01-01T00:00:00.000Z",
+      "locked": false
     }
   ],
-  "logs": [
+  "shifts": []
+}
     {
       "id": 1,
       "stationId": "st1",

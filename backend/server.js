@@ -81,14 +81,31 @@ function loadAdminState() {
     if (!fs.existsSync(filePath)) {
       return getDefaultAdminState();
     }
-    const raw = fs.readFileSync(filePath, 'utf8');
-    const parsed = JSON.parse(raw);
+
+    let raw = '';
+    try {
+      raw = fs.readFileSync(filePath, 'utf8');
+    } catch (readErr) {
+      console.warn('No se pudo leer admin-data.json, usando estado por defecto');
+      return getDefaultAdminState();
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (parseErr) {
+      // Si el JSON está corrupto, no mostramos el stack completo, solo un aviso breve
+      console.warn('admin-data.json inválido, usando estado por defecto');
+      return getDefaultAdminState();
+    }
+
     if (parsed && typeof parsed === 'object') {
       return ensureMasterAdminUser(parsed);
     }
+
     return getDefaultAdminState();
   } catch (e) {
-    console.error('No se pudo cargar admin-data.json', e);
+    console.warn('No se pudo cargar admin-data.json, usando estado por defecto');
     return getDefaultAdminState();
   }
 }
