@@ -40,10 +40,11 @@ let adminState = {
   maintenance: [],
 };
 
-// Estado auxiliar para vistas de estaciones / globo
+// Estado auxiliar para vistas de estaciones / globo / dashboard
 let stationsHighlightId = ""; // estación a resaltar al abrir la vista de estaciones
 let stationsEditingId = ""; // estación actualmente en edición desde el formulario
 let pendingLogStationFilterId = ""; // filtro de estación a aplicar al abrir la vista de bitácora desde el globo
+let dashboardStationId = ""; // estación seleccionada en el panel principal
 
 let currentUser = null;
 let adminConnectionStatusTimer = null;
