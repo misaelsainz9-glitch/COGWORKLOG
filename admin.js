@@ -105,6 +105,30 @@ async function syncAdminStateFromBackendIfAvailable() {
   }
 }
 
+async function syncAdminStateToBackendIfAvailable() {
+  if (!BACKEND_ADMIN_ENABLED) return;
+  try {
+    const payload = {
+      version: adminState.version || ADMIN_DATA_VERSION,
+      stations: Array.isArray(adminState.stations) ? adminState.stations : [],
+      logs: Array.isArray(adminState.logs) ? adminState.logs : [],
+      generalLogs: Array.isArray(adminState.generalLogs)
+        ? adminState.generalLogs
+        : [],
+      users: Array.isArray(adminState.users) ? adminState.users : [],
+      shifts: Array.isArray(adminState.shifts) ? adminState.shifts : [],
+    };
+
+    await fetch("/api/admin-state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: payload }),
+    });
+  } catch (e) {
+    // silencioso: si falla la sync, no rompemos el cliente
+  }
+}
+
 // Datos semilla mínimos: sin estaciones ni bitácoras demo, solo el usuario inicial
 function seedAdminState() {
   const todayIso = new Date().toISOString().slice(0, 10);
